@@ -50,8 +50,14 @@ interface WhisperApi {
 declare global {
   interface Window {
     api: WhisperApi;
+    platform: string;
   }
 }
+
+// macOS draws the traffic-light buttons directly on top of the page (no room
+// reserved automatically, unlike Windows' titleBarOverlay) — see trafficLightPosition
+// in main/index.ts and the matching CSS rule this class enables.
+if (window.platform === 'darwin') document.body.classList.add('platform-mac');
 
 // ── Tabs ─────────────────────────────────────────────────────────────────
 const tabbar = document.getElementById('tabbar') as HTMLDivElement;

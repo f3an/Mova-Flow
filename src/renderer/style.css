@@ -43,6 +43,13 @@ body {
   user-select: none;
 }
 
+/* On macOS the traffic lights (trafficLightPosition in main/index.ts) sit on
+ * top of the page instead of reserving their own space like titleBarOverlay
+ * does on Windows/Linux — push the title text clear of them. */
+.platform-mac .title-strip {
+  padding-left: 78px;
+}
+
 .app {
   display: flex;
   flex: 1;
