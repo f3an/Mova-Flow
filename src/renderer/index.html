@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mova Flow</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="title-strip">Mova Flow</div>
+  <div class="app">
+    <nav class="side-nav" id="sideNav">
+      <button class="nav-collapse-btn" id="navCollapseBtn" aria-label="Collapse sidebar">‹</button>
+      <div class="side-nav-brand">
+        <div class="brand-mark">
+          <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mova Flow">
+            <rect x="2" y="2" width="60" height="60" rx="14" fill="#1c2e23" />
+            <rect x="12.5" y="23" width="6" height="18" rx="3" fill="#e9e7dc" />
+            <rect x="23.5" y="16" width="6" height="32" rx="3" fill="#e9e7dc" />
+            <rect x="34.5" y="20" width="6" height="24" rx="3" fill="#e9e7dc" />
+            <rect x="45.5" y="26" width="6" height="12" rx="3" fill="#e9e7dc" />
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">Mova Flow</div>
+          <div class="brand-sub" id="brandSub">Local transcription, powered by Whisper</div>
+        </div>
+      </div>
+
+      <div class="side-nav-items" id="tabbar">
+        <button class="nav-item active" id="tabBtnTranscribe">
+          <span class="nav-icon">⇪</span>
+          <span class="nav-label" id="navLabelUpload">Upload</span>
+        </button>
+        <button class="nav-item" id="tabBtnServer">
+          <span class="nav-icon">⚙</span>
+          <span class="nav-label" id="navLabelServer">Server</span>
+        </button>
+      </div>
+
+      <div class="side-nav-footer">
+        <div class="lang-switch-row">
+          <label for="langSwitch" id="langSwitchLabel">Language</label>
+          <select id="langSwitch">
+            <option value="en">EN</option>
+            <option value="uk">UK</option>
+          </select>
+        </div>
+      </div>
+    </nav>
+
+    <main class="content">
+      <div id="tab-transcribe" class="panel">
+        <div id="transcribeGate"></div>
+      </div>
+
+      <div id="tab-server" class="panel" hidden>
+        <h2 class="panel-title" id="serverTitle">Server</h2>
+
+        <div class="role-row">
+          <div class="role-option" data-role="host" id="roleHost">
+            <h3 id="roleHostTitle">Server (host)</h3>
+            <p id="roleHostDesc">This machine has a GPU and runs the transcription.</p>
+          </div>
+          <div class="role-option" data-role="client" id="roleClient">
+            <h3 id="roleClientTitle">Client</h3>
+            <p id="roleClientDesc">Interface only, connects to another machine on the network.</p>
+          </div>
+        </div>
+
+        <div id="hostSection">
+          <div class="field-row">
+            <div>
+              <label for="hostPortInput" id="hostPortLabel">Port</label>
+              <input type="number" id="hostPortInput" value="5000">
+            </div>
+          </div>
+          <div class="srv-status-row">
+            <span class="job-status" id="srvBadge">Stopped</span>
+            <button class="action" id="srvToggleBtn">Start</button>
+          </div>
+          <div class="srv-message" id="srvMessage"></div>
+          <div class="lan-url" id="srvLanUrl" hidden></div>
+
+          <div class="secret-box">
+            <label for="hostSecretInput" id="secretLabel">Access secret key</label>
+            <p class="secret-hint" id="secretHint">
+              Required on every client device so it can connect to this server over the network.
+              Without it, the transcription API is inaccessible to anyone.
+            </p>
+            <div class="secret-row">
+              <input type="text" id="hostSecretInput" readonly>
+              <button class="action secondary" id="copySecretBtn">Copy</button>
+              <button class="action danger" id="regenSecretBtn">Generate new</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="clientSection">
+          <div class="field-row">
+            <div>
+              <label for="clientHostInput" id="clientHostLabel">Server IP address</label>
+              <input type="text" id="clientHostInput" placeholder="192.168.1.23">
+            </div>
+            <div style="flex: 0 0 100px;">
+              <label for="clientPortInput" id="clientPortLabel">Port</label>
+              <input type="number" id="clientPortInput" value="5000">
+            </div>
+          </div>
+          <div class="field-row">
+            <div>
+              <label for="clientSecretInput" id="clientSecretLabel">Secret key (from the Server tab on the host
+                machine)</label>
+              <input type="password" id="clientSecretInput" placeholder="secret key">
+            </div>
+          </div>
+          <div class="actions" style="margin-top: 0;">
+            <button class="action" id="clientSaveBtn">Save</button>
+            <button class="action secondary" id="clientCheckBtn">Test connection</button>
+          </div>
+          <div class="srv-message" id="clientCheckResult"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+
+</html>
