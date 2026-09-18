@@ -579,10 +579,19 @@ function applyStaticTranslations(lang: Lang): void {
     const el = document.getElementById(id);
     if (el) el.textContent = t(key, fallback);
   };
+  const setTooltip = (id: string, key: string, fallback: string) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const text = t(key, fallback);
+    el.setAttribute('data-tooltip', text);
+    el.setAttribute('aria-label', text);
+  };
 
   set('brandSub', 'app.tagline', 'Local transcription, powered by Whisper');
   set('navLabelUpload', 'nav.upload', 'Upload');
   set('navLabelServer', 'nav.server', 'Server');
+  setTooltip('tabBtnTranscribe', 'nav.upload', 'Upload');
+  setTooltip('tabBtnServer', 'nav.server', 'Server');
   set('langSwitchLabel', 'lang.switch.label', 'Language');
   set('serverTitle', 'server.title', 'Server');
   set('roleHostTitle', 'role.host.title', 'Server (host)');

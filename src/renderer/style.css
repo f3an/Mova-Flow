@@ -114,6 +114,13 @@ body {
   padding: 10px;
 }
 
+.side-nav.collapsed .nav-item:hover[data-tooltip]::after,
+.side-nav.collapsed .nav-item:focus-visible[data-tooltip]::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
+}
+
 .side-nav-brand {
   display: flex;
   align-items: center;
@@ -154,6 +161,7 @@ body {
 }
 
 .nav-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -166,6 +174,31 @@ body {
   cursor: pointer;
   color: rgba(233, 231, 220, 0.7);
   text-align: left;
+}
+
+/* Only meaningful once the label text is hidden (nav collapsed, either
+ * manually via .collapsed or auto via the narrow-window media query below),
+ * so the show conditions are gated to mirror exactly when that happens. */
+.nav-item[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  background: var(--ink);
+  color: #f3f1ea;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 5px 9px;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 20;
 }
 
 .nav-icon {
@@ -243,6 +276,7 @@ body {
 
 .panel {
   max-width: 720px;
+  margin: 0 auto;
 }
 
 .panel-title {
@@ -267,13 +301,21 @@ body {
 
   .brand-text,
   .nav-label,
-  .side-nav-footer {
+  .side-nav-footer,
+  .nav-collapse-btn {
     display: none;
   }
 
   .nav-item {
     justify-content: center;
     padding: 10px;
+  }
+
+  .nav-item:hover[data-tooltip]::after,
+  .nav-item:focus-visible[data-tooltip]::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(-50%) translateX(0);
   }
 
   .content {
