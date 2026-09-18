@@ -11,8 +11,17 @@ const WHISPER_CPP_TAG = 'b5130';
 const CUDA_ASSET = 'whisper-cublas-12.4.0-bin-x64.zip';
 const CPU_ASSET = 'whisper-bin-x64.zip';
 
-const MODEL_FILENAME = process.env.WHISPER_MODEL_FILE || 'ggml-large-v3.bin';
-const MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL_FILENAME}`;
+// Common ggml builds published under ggerganov/whisper.cpp on HuggingFace.
+export const MODEL_PRESETS = ['tiny', 'base', 'small', 'medium', 'large-v3', 'large-v3-turbo'] as const;
+export type ModelPreset = (typeof MODEL_PRESETS)[number];
+export const DEFAULT_MODEL_PRESET: ModelPreset = 'large-v3';
+
+export interface ModelChoice {
+  // Absolute path to a model file the user picked themselves — takes priority
+  // over `preset` when non-empty, and is never auto-downloaded.
+  customPath: string;
+  preset: ModelPreset;
+}
 
 export type ProgressCb = (message: string) => void;
 
@@ -28,8 +37,9 @@ export function cliPath(userDataDir: string): string {
   return path.join(binDir(userDataDir), 'Release', 'whisper-cli.exe');
 }
 
-export function modelPath(userDataDir: string): string {
-  return path.join(engineDir(userDataDir), MODEL_FILENAME);
+export function modelPath(userDataDir: string, choice: ModelChoice): string {
+  if (choice.customPath) return choice.customPath;
+  return path.join(engineDir(userDataDir), `ggml-${choice.preset}.bin`);
 }
 
 /** GPU detection via nvidia-smi (ships with the driver) — no CUDA Toolkit needed. */
@@ -59,7 +69,7 @@ function expandArchive(zipPath: string, destDir: string): Promise<void> {
 /** Fetches the heavy components (whisper.cpp binary + GGUF model) into userData
  * if they're not already there — the equivalent of the Python version's staged
  * pip-install, now just a plain HTTP download. */
-export async function ensureEngine(userDataDir: string, onProgress: ProgressCb): Promise<void> {
+export async function ensureEngine(userDataDir: string, model: ModelChoice, onProgress: ProgressCb): Promise<void> {
   const eDir = engineDir(userDataDir);
   fs.mkdirSync(eDir, { recursive: true });
 
@@ -80,9 +90,19 @@ export async function ensureEngine(userDataDir: string, onProgress: ProgressCb):
     fs.unlinkSync(zipPath);
   }
 
-  if (!fs.existsSync(modelPath(userDataDir))) {
-    onProgress(`Downloading model (${MODEL_FILENAME})...`);
-    await downloadFile(MODEL_URL, modelPath(userDataDir), (received, total) => {
+  const mPath = modelPath(userDataDir, model);
+  if (model.customPath) {
+    if (!fs.existsSync(mPath)) {
+      throw new Error(`Selected model file not found: ${mPath}`);
+    }
+    return;
+  }
+
+  if (!fs.existsSync(mPath)) {
+    const filename = `ggml-${model.preset}.bin`;
+    const url = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${filename}`;
+    onProgress(`Downloading model (${filename})...`);
+    await downloadFile(url, mPath, (received, total) => {
       if (total > 0) onProgress(`Downloading model... ${Math.round((received / total) * 100)}%`);
     });
   }
@@ -113,6 +133,7 @@ export interface TranscribeResult {
  * stdout as they stream in. */
 export function transcribe(
   userDataDir: string,
+  modelFilePath: string,
   filePath: string,
   language: string,
   onProgress: ProgressCb,
@@ -121,7 +142,7 @@ export function transcribe(
     // whisper-cli defaults to 'en' when -l is omitted — it does NOT auto-detect
     // by default — so auto mode needs an explicit '-l auto' or everything gets
     // forced through as English.
-    const args = ['-m', modelPath(userDataDir), '-f', filePath, '-l', language || 'auto'];
+    const args = ['-m', modelFilePath, '-f', filePath, '-l', language || 'auto'];
 
     const exe = cliPath(userDataDir);
     const child = spawn(exe, args, { cwd: path.dirname(exe) });

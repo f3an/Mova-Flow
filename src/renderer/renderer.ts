@@ -7,6 +7,9 @@ interface ServerState {
   error: string | null;
 }
 
+const MODEL_PRESETS = ['tiny', 'base', 'small', 'medium', 'large-v3', 'large-v3-turbo'] as const;
+type ModelPreset = (typeof MODEL_PRESETS)[number];
+
 interface AppState {
   role: 'host' | 'client';
   host: string;
@@ -16,6 +19,8 @@ interface AppState {
   authSecret: string;
   clientSecret: string;
   language: Lang;
+  modelPreset: ModelPreset;
+  modelPath: string;
 }
 
 interface IssuedToken {
@@ -25,13 +30,21 @@ interface IssuedToken {
 
 interface WhisperApi {
   get_state(): Promise<AppState>;
-  save_config(role: string, host: string, port: number, clientSecret: string): Promise<{ ok: boolean }>;
+  save_config(
+    role: string,
+    host: string,
+    port: number,
+    clientSecret: string,
+    modelPreset: string,
+    modelPath: string,
+  ): Promise<{ ok: boolean }>;
   start_server(): Promise<{ ok: boolean }>;
   stop_server(): Promise<{ ok: boolean }>;
   check_remote(host: string, port: number, secret: string): Promise<{ reachable: boolean; authOk: boolean }>;
   regenerate_secret(): Promise<{ secret: string }>;
   get_token(): Promise<IssuedToken>;
   set_language(lang: Lang): Promise<{ ok: boolean }>;
+  choose_model_file(): Promise<{ path: string }>;
 }
 
 declare global {
@@ -448,6 +461,10 @@ const hostSecretInput = document.getElementById('hostSecretInput') as HTMLInputE
 const copySecretBtn = document.getElementById('copySecretBtn') as HTMLButtonElement;
 const regenSecretBtn = document.getElementById('regenSecretBtn') as HTMLButtonElement;
 const langSwitch = document.getElementById('langSwitch') as HTMLSelectElement;
+const modelSelect = document.getElementById('modelSelect') as HTMLSelectElement;
+const modelPathInput = document.getElementById('modelPathInput') as HTMLInputElement;
+const browseModelBtn = document.getElementById('browseModelBtn') as HTMLButtonElement;
+const clearModelBtn = document.getElementById('clearModelBtn') as HTMLButtonElement;
 
 let uiRole: 'host' | 'client' = 'host';
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -461,6 +478,19 @@ function selectRole(role: 'host' | 'client'): void {
 }
 roleHost.addEventListener('click', () => selectRole('host'));
 roleClient.addEventListener('click', () => selectRole('client'));
+
+function setCustomModelPath(customPath: string): void {
+  modelPathInput.value = customPath;
+  clearModelBtn.hidden = !customPath;
+  modelSelect.disabled = !!customPath;
+}
+
+browseModelBtn.addEventListener('click', async () => {
+  const { path: chosen } = await window.api.choose_model_file();
+  if (chosen) setCustomModelPath(chosen);
+});
+
+clearModelBtn.addEventListener('click', () => setCustomModelPath(''));
 
 const SRV_LABELS: Record<string, [string, string, string]> = {
   stopped: ['srv.stopped', 'Stopped', 'status-queued'],
@@ -509,6 +539,8 @@ async function refreshServerTab(): Promise<void> {
   if (document.activeElement !== clientPortInput) clientPortInput.value = String(state.port);
   if (document.activeElement !== clientSecretInput) clientSecretInput.value = state.clientSecret || '';
   hostSecretInput.value = state.authSecret || '';
+  modelSelect.value = state.modelPreset;
+  setCustomModelPath(state.modelPath || '');
   renderServerState(state);
   refreshTranscribeGate();
 }
@@ -520,14 +552,32 @@ srvToggleBtn.addEventListener('click', async () => {
   } else {
     // Pass along clientSecretInput.value so we don't accidentally wipe a
     // previously saved client secret when only the host settings change.
-    await window.api.save_config('host', '', Number(hostPortInput.value) || 5000, clientSecretInput.value);
+    await window.api.save_config(
+      'host',
+      '',
+      Number(hostPortInput.value) || 5000,
+      clientSecretInput.value,
+      modelSelect.value,
+      modelPathInput.value,
+    );
     await window.api.start_server();
   }
   refreshServerTab();
 });
 
 clientSaveBtn.addEventListener('click', async () => {
-  await window.api.save_config('client', clientHostInput.value, Number(clientPortInput.value) || 5000, clientSecretInput.value);
+  // A client doesn't use a model at all, but save_config always writes both
+  // fields — pass the existing values through so switching to client and
+  // saving doesn't wipe out a host model choice made earlier.
+  const state = await window.api.get_state();
+  await window.api.save_config(
+    'client',
+    clientHostInput.value,
+    Number(clientPortInput.value) || 5000,
+    clientSecretInput.value,
+    state.modelPreset,
+    state.modelPath,
+  );
   cachedToken = null; // the secret may have changed — the old token is no longer guaranteed valid
   clientCheckResult.textContent = t('client.saved', 'Saved.');
   refreshServerTab();
@@ -600,6 +650,12 @@ function applyStaticTranslations(lang: Lang): void {
   set('roleClientDesc', 'role.client.desc', 'Interface only, connects to another machine on the network.');
   set('hostPortLabel', 'field.port', 'Port');
   set('clientPortLabel', 'field.port', 'Port');
+  set('modelSelectLabel', 'model.select.label', 'Whisper model');
+  set('modelSelectHint', 'model.select.hint', 'Larger models are more accurate but slower and take longer to download.');
+  set('modelPathHint', 'model.path.hint', 'Or use your own model file instead of downloading one:');
+  set('browseModelBtn', 'model.browse', 'Browse...');
+  set('clearModelBtn', 'model.clear', 'Clear');
+  modelPathInput.placeholder = t('model.path.placeholder', 'No file selected');
   set('secretLabel', 'secret.label', 'Access secret key');
   set(
     'secretHint',

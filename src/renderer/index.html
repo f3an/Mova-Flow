@@ -77,6 +77,31 @@
               <input type="number" id="hostPortInput" value="5000">
             </div>
           </div>
+
+          <div class="secret-box">
+            <label for="modelSelect" id="modelSelectLabel">Whisper model</label>
+            <p class="secret-hint" id="modelSelectHint">
+              Larger models are more accurate but slower and take longer to download.
+            </p>
+            <select id="modelSelect">
+              <option value="tiny">Tiny (~75 MB)</option>
+              <option value="base">Base (~140 MB)</option>
+              <option value="small">Small (~460 MB)</option>
+              <option value="medium">Medium (~1.4 GB)</option>
+              <option value="large-v3">Large v3 (~3 GB)</option>
+              <option value="large-v3-turbo">Large v3 turbo (~1.5 GB)</option>
+            </select>
+
+            <p class="secret-hint" id="modelPathHint" style="margin-top: 16px;">
+              Or use your own model file instead of downloading one:
+            </p>
+            <div class="secret-row">
+              <input type="text" id="modelPathInput" readonly placeholder="No file selected">
+              <button class="action secondary" id="browseModelBtn">Browse...</button>
+              <button class="action secondary" id="clearModelBtn" hidden>Clear</button>
+            </div>
+          </div>
+
           <div class="srv-status-row">
             <span class="job-status" id="srvBadge">Stopped</span>
             <button class="action" id="srvToggleBtn">Start</button>

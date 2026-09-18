@@ -1,9 +1,9 @@
-import { app, BrowserWindow, Menu, ipcMain, IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain, IpcMainInvokeEvent } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { controller } from './server';
-import { ensureEngine } from './engine';
+import { ensureEngine, modelPath, DEFAULT_MODEL_PRESET, ModelChoice, ModelPreset } from './engine';
 import { generateSecret, issueToken } from './auth';
 
 type UiLang = 'en' | 'uk';
@@ -15,6 +15,10 @@ interface Config {
   auth_secret: string;
   client_secret: string;
   language: UiLang;
+  model_preset: ModelPreset;
+  // Absolute path to a model file the user picked themselves. Non-empty means
+  // "use this instead of downloading a preset" — see ModelChoice in engine.ts.
+  model_path: string;
 }
 
 const DEFAULT_CONFIG: Config = {
@@ -24,7 +28,13 @@ const DEFAULT_CONFIG: Config = {
   auth_secret: '',
   client_secret: '',
   language: 'en',
+  model_preset: DEFAULT_MODEL_PRESET,
+  model_path: '',
 };
+
+function modelChoiceFromConfig(cfg: Config): ModelChoice {
+  return { customPath: cfg.model_path, preset: cfg.model_preset };
+}
 
 function configPath(): string {
   return path.join(app.getPath('userData'), 'config.json');
@@ -55,6 +65,11 @@ function getLanIp(): string {
   }
   return '127.0.0.1';
 }
+
+// Captured before anything below has a chance to write config.json (e.g. the
+// auth-secret bootstrap just below), so it reflects whether the user has
+// actually been through setup — not just whether the app has run once.
+const hadConfigAtLaunch = fs.existsSync(configPath());
 
 // Kept in memory separate from disk so requireAuth doesn't do a synchronous
 // config.json read on every HTTP request — this variable is what gets
@@ -95,12 +110,16 @@ function createWindow(): void {
     autoHideMenuBar: true,
     // Windows Controls Overlay: the native minimize/maximize/close buttons stay
     // (OS-drawn), just wrapped in a custom titlebar instead of the stock white strip.
+    // titleBarOverlay is Windows/Linux-only; on macOS `titleBarStyle: 'hidden'` alone
+    // draws the traffic lights on top of the page instead — trafficLightPosition below
+    // centers them in the same 36px-tall bar, and style.css reserves room for them.
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#2c4235',
       symbolColor: '#e9e7dc',
       height: 36,
     },
+    trafficLightPosition: { x: 14, y: 11 },
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,
@@ -115,12 +134,13 @@ async function startServer(): Promise<void> {
   const cfg = readConfig();
   const port = cfg.server_port || 5000;
   const userDataDir = app.getPath('userData');
+  const model = modelChoiceFromConfig(cfg);
 
   setServerState({ stage: 'checking', message: 'Checking recognition components...', error: null });
   try {
-    await ensureEngine(userDataDir, (message) => setServerState({ stage: 'installing', message }));
+    await ensureEngine(userDataDir, model, (message) => setServerState({ stage: 'installing', message }));
     setServerState({ stage: 'starting', message: 'Starting server...' });
-    await controller.start(port, userDataDir, () => authSecret);
+    await controller.start(port, userDataDir, modelPath(userDataDir, model), () => authSecret);
     setServerState({ stage: 'running', message: 'Ready', port, error: null });
   } catch (err) {
     setServerState({ stage: 'error', message: '', error: (err as Error).message });
@@ -138,12 +158,22 @@ ipcMain.handle('get-state', () => {
     authSecret,
     clientSecret: cfg.client_secret,
     language: cfg.language,
+    modelPreset: cfg.model_preset,
+    modelPath: cfg.model_path,
   };
 });
 
 ipcMain.handle(
   'save-config',
-  (_evt: IpcMainInvokeEvent, role: 'host' | 'client', host: string, port: number, clientSecret: string) => {
+  (
+    _evt: IpcMainInvokeEvent,
+    role: 'host' | 'client',
+    host: string,
+    port: number,
+    clientSecret: string,
+    modelPreset: ModelPreset,
+    modelCustomPath: string,
+  ) => {
     const cfg = readConfig();
     writeConfig({
       ...cfg,
@@ -151,10 +181,29 @@ ipcMain.handle(
       server_host: (host || '').trim(),
       server_port: Number(port) || 5000,
       client_secret: (clientSecret || '').trim(),
+      model_preset: modelPreset || cfg.model_preset,
+      model_path: (modelCustomPath || '').trim(),
     });
     return { ok: true };
   },
 );
+
+ipcMain.handle('choose-model-file', async () => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = win
+    ? await dialog.showOpenDialog(win, {
+        title: 'Choose a Whisper model file',
+        filters: [{ name: 'GGML model', extensions: ['bin'] }],
+        properties: ['openFile'],
+      })
+    : await dialog.showOpenDialog({
+        title: 'Choose a Whisper model file',
+        filters: [{ name: 'GGML model', extensions: ['bin'] }],
+        properties: ['openFile'],
+      });
+  if (result.canceled || result.filePaths.length === 0) return { path: '' };
+  return { path: result.filePaths[0] };
+});
 
 ipcMain.handle('set-language', (_evt: IpcMainInvokeEvent, lang: UiLang) => {
   writeConfig({ ...readConfig(), language: lang === 'uk' ? 'uk' : 'en' });
@@ -203,7 +252,10 @@ ipcMain.handle(
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   createWindow();
-  if (readConfig().role === 'host') void startServer();
+  // Only auto-start on a machine that has already been set up (config.json
+  // exists) — a fresh install must not silently kick off a multi-GB model
+  // download before the user has even seen the Server tab and chosen a role.
+  if (hadConfigAtLaunch && readConfig().role === 'host') void startServer();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

@@ -27,12 +27,19 @@ interface Job {
 
 const jobs = new Map<string, Job>();
 
-function runJob(jobId: string, filePath: string, language: string, userDataDir: string, outputDir: string): void {
+function runJob(
+  jobId: string,
+  filePath: string,
+  language: string,
+  userDataDir: string,
+  modelFilePath: string,
+  outputDir: string,
+): void {
   const job = jobs.get(jobId)!;
   job.status = 'processing';
   job.progress = 'Transcribing audio... this can take a few minutes.';
 
-  transcribe(userDataDir, filePath, language, (progress) => {
+  transcribe(userDataDir, modelFilePath, filePath, language, (progress) => {
     const j = jobs.get(jobId);
     if (j) j.progress = progress;
   })
@@ -71,7 +78,7 @@ export class ServerController {
 
   /** `getSecret` is a getter, not a value: the secret can be regenerated while
    * the server is running, so token verification must always see the current one. */
-  start(port: number, userDataDir: string, getSecret: () => string): Promise<void> {
+  start(port: number, userDataDir: string, modelFilePath: string, getSecret: () => string): Promise<void> {
     if (this.httpServer) return Promise.resolve();
 
     const uploadDir = path.join(userDataDir, 'uploads');
@@ -143,7 +150,7 @@ export class ServerController {
       const language = (req.body.language as string) || 'auto';
       const jobId = randomUUID().replace(/-/g, '').slice(0, 12);
       jobs.set(jobId, { status: 'queued', progress: 'Queued...', filename: file.originalname });
-      runJob(jobId, file.path, language, userDataDir, outputDir);
+      runJob(jobId, file.path, language, userDataDir, modelFilePath, outputDir);
 
       res.json({ job_id: jobId });
     });
