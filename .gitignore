@@ -3,4 +3,4 @@ dist/
 release/
 _verify/
 *.log
-build/
+build
