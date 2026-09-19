@@ -15,6 +15,13 @@ import { rateLimiter } from './rateLimit';
 // renderer.ts before it's ever sent here.
 const ALLOWED_EXT = new Set(['.mp3', '.wav', '.ogg', '.flac']);
 
+const AUDIO_MIME: Record<string, string> = {
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.flac': 'audio/flac',
+};
+
 interface Job {
   status: 'queued' | 'processing' | 'done' | 'error';
   progress: string;
@@ -25,15 +32,44 @@ interface Job {
   error?: string;
 }
 
+// One entry per completed transcription, kept on disk (history.json) so the
+// list — and the original audio, kept alongside instead of deleted — survives
+// server restarts, unlike the in-memory `jobs` map above.
+interface HistoryEntry {
+  id: string;
+  filename: string;
+  language: string;
+  createdAt: number;
+  audioExt: string;
+}
+
+function historyPath(userDataDir: string): string {
+  return path.join(userDataDir, 'history.json');
+}
+
+function loadHistory(userDataDir: string): HistoryEntry[] {
+  try {
+    return JSON.parse(fs.readFileSync(historyPath(userDataDir), 'utf-8'));
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(userDataDir: string, entries: HistoryEntry[]): void {
+  fs.writeFileSync(historyPath(userDataDir), JSON.stringify(entries, null, 2), 'utf-8');
+}
+
 const jobs = new Map<string, Job>();
 
 function runJob(
   jobId: string,
   filePath: string,
+  originalname: string,
   language: string,
   userDataDir: string,
   modelFilePath: string,
   outputDir: string,
+  audioDir: string,
 ): void {
   const job = jobs.get(jobId)!;
   job.status = 'processing';
@@ -46,6 +82,20 @@ function runJob(
     .then((result) => {
       const outputFile = `${jobId}.txt`;
       fs.writeFileSync(path.join(outputDir, outputFile), result.text, 'utf-8');
+
+      const ext = path.extname(originalname).toLowerCase();
+      fs.renameSync(filePath, path.join(audioDir, `${jobId}${ext}`));
+
+      const history = loadHistory(userDataDir);
+      history.unshift({
+        id: jobId,
+        filename: originalname,
+        language: result.detectedLanguage,
+        createdAt: Date.now(),
+        audioExt: ext,
+      });
+      saveHistory(userDataDir, history);
+
       const j = jobs.get(jobId)!;
       j.status = 'done';
       j.result = result.text;
@@ -59,8 +109,6 @@ function runJob(
         j.status = 'error';
         j.error = err.message;
       }
-    })
-    .finally(() => {
       fs.unlink(filePath, () => {});
     });
 }
@@ -78,13 +126,21 @@ export class ServerController {
 
   /** `getSecret` is a getter, not a value: the secret can be regenerated while
    * the server is running, so token verification must always see the current one. */
-  start(port: number, userDataDir: string, modelFilePath: string, getSecret: () => string): Promise<void> {
+  start(
+    port: number,
+    userDataDir: string,
+    modelFilePath: string,
+    lanExpose: boolean,
+    getSecret: () => string,
+  ): Promise<void> {
     if (this.httpServer) return Promise.resolve();
 
     const uploadDir = path.join(userDataDir, 'uploads');
     const outputDir = path.join(userDataDir, 'transcripts');
+    const audioDir = path.join(userDataDir, 'audio');
     fs.mkdirSync(uploadDir, { recursive: true });
     fs.mkdirSync(outputDir, { recursive: true });
+    fs.mkdirSync(audioDir, { recursive: true });
 
     const app = express();
     app.use(express.json());
@@ -150,7 +206,7 @@ export class ServerController {
       const language = (req.body.language as string) || 'auto';
       const jobId = randomUUID().replace(/-/g, '').slice(0, 12);
       jobs.set(jobId, { status: 'queued', progress: 'Queued...', filename: file.originalname });
-      runJob(jobId, file.path, language, userDataDir, modelFilePath, outputDir);
+      runJob(jobId, file.path, file.originalname, language, userDataDir, modelFilePath, outputDir, audioDir);
 
       res.json({ job_id: jobId });
     });
@@ -165,17 +221,69 @@ export class ServerController {
       res.json(job.status === 'done' ? { ...rest, result } : rest);
     });
 
+    // Reads straight off disk rather than the in-memory `jobs` map, so history
+    // entries from a previous server run (jobs map reset on restart) still work.
+    const idParamSafe = (id: string): boolean => /^[a-f0-9]{1,32}$/.test(id);
+
     app.get('/api/download/:id', requireAuth, (req: Request<{ id: string }>, res: Response) => {
-      const job = jobs.get(req.params.id);
-      if (!job || job.status !== 'done' || !job.outputFile) {
+      const { id } = req.params;
+      if (!idParamSafe(id) || !fs.existsSync(path.join(outputDir, `${id}.txt`))) {
         res.status(404).json({ error: 'Transcript not ready yet' });
         return;
       }
-      res.download(path.join(outputDir, job.outputFile), `transcript_${req.params.id}.txt`);
+      res.download(path.join(outputDir, `${id}.txt`), `transcript_${id}.txt`);
+    });
+
+    app.get('/api/history', requireAuth, (_req: Request, res: Response) => {
+      res.json({ items: loadHistory(userDataDir) });
+    });
+
+    app.get('/api/history/:id/text', requireAuth, (req: Request<{ id: string }>, res: Response) => {
+      const { id } = req.params;
+      const textFile = path.join(outputDir, `${id}.txt`);
+      if (!idParamSafe(id) || !fs.existsSync(textFile)) {
+        res.status(404).json({ error: 'Transcript not found' });
+        return;
+      }
+      res.json({ text: fs.readFileSync(textFile, 'utf-8') });
+    });
+
+    app.get('/api/history/:id/audio', requireAuth, (req: Request<{ id: string }>, res: Response) => {
+      const { id } = req.params;
+      const entry = loadHistory(userDataDir).find((e) => e.id === id);
+      if (!idParamSafe(id) || !entry) {
+        res.status(404).json({ error: 'Recording not found' });
+        return;
+      }
+      const audioFile = path.join(audioDir, `${id}${entry.audioExt}`);
+      if (!fs.existsSync(audioFile)) {
+        res.status(404).json({ error: 'Recording not found' });
+        return;
+      }
+      res.type(AUDIO_MIME[entry.audioExt] || 'application/octet-stream');
+      res.sendFile(audioFile);
+    });
+
+    app.delete('/api/history/:id', requireAuth, (req: Request<{ id: string }>, res: Response) => {
+      const { id } = req.params;
+      if (!idParamSafe(id)) {
+        res.status(404).json({ error: 'Recording not found' });
+        return;
+      }
+      const history = loadHistory(userDataDir);
+      const entry = history.find((e) => e.id === id);
+      if (!entry) {
+        res.status(404).json({ error: 'Recording not found' });
+        return;
+      }
+      saveHistory(userDataDir, history.filter((e) => e.id !== id));
+      fs.unlink(path.join(audioDir, `${id}${entry.audioExt}`), () => {});
+      fs.unlink(path.join(outputDir, `${id}.txt`), () => {});
+      res.json({ ok: true });
     });
 
     return new Promise((resolve, reject) => {
-      const srv = app.listen(port, '0.0.0.0', () => {
+      const srv = app.listen(port, lanExpose ? '0.0.0.0' : '127.0.0.1', () => {
         this.httpServer = srv;
         resolve();
       });

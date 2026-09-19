@@ -19,6 +19,10 @@ interface Config {
   // Absolute path to a model file the user picked themselves. Non-empty means
   // "use this instead of downloading a preset" — see ModelChoice in engine.ts.
   model_path: string;
+  // false binds the server to 127.0.0.1 only — this machine's own Upload tab
+  // still works (it always talks to the host over localhost), but no other
+  // device on the network can reach it.
+  lan_expose: boolean;
 }
 
 const DEFAULT_CONFIG: Config = {
@@ -30,6 +34,7 @@ const DEFAULT_CONFIG: Config = {
   language: 'en',
   model_preset: DEFAULT_MODEL_PRESET,
   model_path: '',
+  lan_expose: false,
 };
 
 function modelChoiceFromConfig(cfg: Config): ModelChoice {
@@ -105,6 +110,7 @@ function createWindow(): void {
     height: 720,
     minWidth: 560,
     minHeight: 420,
+    maxWidth: 1200,
     // Paper background right away so there's no white flash before the CSS loads.
     backgroundColor: '#f3f1ea',
     autoHideMenuBar: true,
@@ -140,7 +146,7 @@ async function startServer(): Promise<void> {
   try {
     await ensureEngine(userDataDir, model, (message) => setServerState({ stage: 'installing', message }));
     setServerState({ stage: 'starting', message: 'Starting server...' });
-    await controller.start(port, userDataDir, modelPath(userDataDir, model), () => authSecret);
+    await controller.start(port, userDataDir, modelPath(userDataDir, model), cfg.lan_expose, () => authSecret);
     setServerState({ stage: 'running', message: 'Ready', port, error: null });
   } catch (err) {
     setServerState({ stage: 'error', message: '', error: (err as Error).message });
@@ -160,6 +166,7 @@ ipcMain.handle('get-state', () => {
     language: cfg.language,
     modelPreset: cfg.model_preset,
     modelPath: cfg.model_path,
+    lanExpose: cfg.lan_expose,
   };
 });
 
@@ -173,6 +180,7 @@ ipcMain.handle(
     clientSecret: string,
     modelPreset: ModelPreset,
     modelCustomPath: string,
+    lanExpose: boolean,
   ) => {
     const cfg = readConfig();
     writeConfig({
@@ -183,6 +191,7 @@ ipcMain.handle(
       client_secret: (clientSecret || '').trim(),
       model_preset: modelPreset || cfg.model_preset,
       model_path: (modelCustomPath || '').trim(),
+      lan_expose: !!lanExpose,
     });
     return { ok: true };
   },

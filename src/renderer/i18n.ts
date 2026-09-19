@@ -10,6 +10,7 @@ const UK: Record<string, string> = {
   'app.title': 'Mova Flow',
   'app.tagline': 'Локальна транскрипція на основі Whisper',
   'nav.upload': 'Завантаження',
+  'nav.history': 'Історія',
   'nav.server': 'Сервер',
   'lang.switch.label': 'Мова',
 
@@ -37,6 +38,16 @@ const UK: Record<string, string> = {
   'job.err.lostConnection': "Втрачено зв'язок із сервером",
   'job.err.unknown': 'Невідома помилка',
 
+  'history.title': 'Історія',
+  'history.empty': 'Ще немає жодної транскрипції.',
+  'history.language': 'Мова: {lang}',
+  'history.play': 'Відтворити',
+  'history.loading': 'Завантаження...',
+  'history.viewText': 'Показати текст',
+  'history.hideText': 'Сховати текст',
+  'history.delete': 'Видалити',
+  'history.delete.confirm': 'Видалити цей запис і його транскрипцію? Це незворотно.',
+
   'server.title': 'Сервер',
   'role.host.title': 'Сервер (host)',
   'role.host.desc': 'Ця машина має GPU і обробляє транскрипцію.',
@@ -58,6 +69,10 @@ const UK: Record<string, string> = {
   'srv.start': 'Старт',
   'srv.stop': 'Стоп',
   'srv.lanUrl': 'Доступно в мережі: {url}',
+  'srv.localOnly': 'Доступно лише на цьому комп’ютері.',
+  'lan.expose.label': 'Доступ з локальної мережі',
+  'lan.expose.hint':
+    'Дозволяє іншим пристроям у мережі підключатись до цього сервера. Вимкни, щоб користуватись лише на цьому комп’ютері.',
 
   'secret.label': 'Секретний ключ доступу',
   'secret.hint':

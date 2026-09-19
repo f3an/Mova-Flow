@@ -21,6 +21,7 @@ interface AppState {
   language: Lang;
   modelPreset: ModelPreset;
   modelPath: string;
+  lanExpose: boolean;
 }
 
 interface IssuedToken {
@@ -37,6 +38,7 @@ interface WhisperApi {
     clientSecret: string,
     modelPreset: string,
     modelPath: string,
+    lanExpose: boolean,
   ): Promise<{ ok: boolean }>;
   start_server(): Promise<{ ok: boolean }>;
   stop_server(): Promise<{ ok: boolean }>;
@@ -62,17 +64,25 @@ if (window.platform === 'darwin') document.body.classList.add('platform-mac');
 // ── Tabs ─────────────────────────────────────────────────────────────────
 const tabbar = document.getElementById('tabbar') as HTMLDivElement;
 const tabBtnTranscribe = document.getElementById('tabBtnTranscribe') as HTMLButtonElement;
+const tabBtnHistory = document.getElementById('tabBtnHistory') as HTMLButtonElement;
 const tabBtnServer = document.getElementById('tabBtnServer') as HTMLButtonElement;
 const tabTranscribe = document.getElementById('tab-transcribe') as HTMLDivElement;
+const tabHistory = document.getElementById('tab-history') as HTMLDivElement;
 const tabServer = document.getElementById('tab-server') as HTMLDivElement;
 
-function showTab(name: 'transcribe' | 'server'): void {
+function showTab(name: 'transcribe' | 'history' | 'server'): void {
   tabTranscribe.hidden = name !== 'transcribe';
+  tabHistory.hidden = name !== 'history';
   tabServer.hidden = name !== 'server';
   tabBtnTranscribe.classList.toggle('active', name === 'transcribe');
+  tabBtnHistory.classList.toggle('active', name === 'history');
   tabBtnServer.classList.toggle('active', name === 'server');
 }
 tabBtnTranscribe.addEventListener('click', () => showTab('transcribe'));
+tabBtnHistory.addEventListener('click', () => {
+  showTab('history');
+  refreshHistoryTab();
+});
 tabBtnServer.addEventListener('click', () => {
   showTab('server');
   refreshServerTab();
@@ -163,12 +173,21 @@ const BUSY_BANNER: Record<string, [string, string]> = {
   starting: ['banner.starting', 'Starting server...'],
 };
 
+/** null means "not reachable yet" — either the local host server hasn't
+ * finished starting, or (for a client) there's simply no way to know without
+ * a round trip, so that case is left to whatever calls fetch() to discover. */
+function serverBaseUrl(state: AppState): string | null {
+  return state.role === 'host'
+    ? state.server.stage === 'running'
+      ? `http://127.0.0.1:${state.server.port}`
+      : null
+    : `http://${state.host}:${state.port}`;
+}
+
 async function refreshTranscribeGate(): Promise<void> {
   const gate = document.getElementById('transcribeGate') as HTMLDivElement;
   const state = await window.api.get_state();
-  const base = state.role === 'host'
-    ? (state.server.stage === 'running' ? `http://127.0.0.1:${state.server.port}` : null)
-    : `http://${state.host}:${state.port}`;
+  const base = serverBaseUrl(state);
 
   if (base === null) {
     const busyEntry = BUSY_BANNER[state.server.stage];
@@ -447,6 +466,132 @@ function escapeHtml(str: string): string {
   return div.innerHTML;
 }
 
+// ── "History" tab ────────────────────────────────────────────────────────
+interface HistoryItem {
+  id: string;
+  filename: string;
+  language: string;
+  createdAt: number;
+  audioExt: string;
+}
+
+async function refreshHistoryTab(): Promise<void> {
+  const gate = document.getElementById('historyGate') as HTMLDivElement;
+  const state = await window.api.get_state();
+  const base = serverBaseUrl(state);
+
+  if (base === null) {
+    gate.innerHTML = `<div class="banner">${t('banner.off', 'Server is off. Go to the Server tab and press Start.')}</div>`;
+    return;
+  }
+
+  let items: HistoryItem[];
+  try {
+    const res = await authorizedFetch(base, '/api/history');
+    items = (await res.json()).items || [];
+  } catch {
+    gate.innerHTML = `<div class="banner">${t('job.err.unreachable', 'Could not reach the server.')}</div>`;
+    return;
+  }
+
+  if (items.length === 0) {
+    gate.innerHTML = `<div class="banner">${t('history.empty', 'No transcriptions yet.')}</div>`;
+    return;
+  }
+
+  gate.innerHTML = items.map((item) => historyCardHtml(item)).join('');
+  gate.querySelectorAll<HTMLDivElement>('.job').forEach((card) => wireHistoryCard(card, base));
+}
+
+function historyCardHtml(item: HistoryItem): string {
+  const date = new Date(item.createdAt).toLocaleString();
+  return `
+    <div class="job" data-id="${item.id}" data-ext="${item.audioExt}">
+      <div class="job-head">
+        <div class="job-name">${escapeHtml(item.filename)}</div>
+        <div class="job-status status-done">${escapeHtml(date)}</div>
+      </div>
+      <div class="progress-text">${t('history.language', 'Language: {lang}', { lang: item.language })}</div>
+      <div class="history-audio"></div>
+      <div class="actions">
+        <button class="action secondary" data-action="play">${t('history.play', 'Play')}</button>
+        <button class="action secondary" data-action="text">${t('history.viewText', 'View transcript')}</button>
+        <button class="action secondary" data-action="download">${t('job.download', 'Download .txt')}</button>
+        <button class="action danger" data-action="delete">${t('history.delete', 'Delete')}</button>
+      </div>
+      <div class="transcript-box" hidden></div>
+    </div>
+  `;
+}
+
+function buildAudioPlayer(container: HTMLElement, src: string): void {
+  const audio = document.createElement('audio');
+  audio.src = src;
+  audio.controls = true;
+  audio.autoplay = true;
+  container.appendChild(audio);
+}
+
+function wireHistoryCard(card: HTMLDivElement, base: string): void {
+  const id = card.dataset.id!;
+  const playBtn = card.querySelector('[data-action="play"]') as HTMLButtonElement;
+  const textBtn = card.querySelector('[data-action="text"]') as HTMLButtonElement;
+  const downloadBtn = card.querySelector('[data-action="download"]') as HTMLButtonElement;
+  const deleteBtn = card.querySelector('[data-action="delete"]') as HTMLButtonElement;
+  const audioSlot = card.querySelector('.history-audio') as HTMLDivElement;
+  const textBox = card.querySelector('.transcript-box') as HTMLDivElement;
+
+  playBtn.addEventListener('click', async () => {
+    if (audioSlot.querySelector('.audio-player')) return;
+    playBtn.disabled = true;
+    playBtn.textContent = t('history.loading', 'Loading...');
+    try {
+      const res = await authorizedFetch(base, `/api/history/${id}/audio`);
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      buildAudioPlayer(audioSlot, URL.createObjectURL(blob));
+      playBtn.remove();
+    } catch {
+      playBtn.disabled = false;
+      playBtn.textContent = t('job.err.unreachable', 'Could not reach the server.');
+    }
+  });
+
+  textBtn.addEventListener('click', async () => {
+    if (!textBox.hidden) {
+      textBox.hidden = true;
+      textBtn.textContent = t('history.viewText', 'View transcript');
+      return;
+    }
+    if (!textBox.dataset.loaded) {
+      try {
+        const res = await authorizedFetch(base, `/api/history/${id}/text`);
+        const data = await res.json();
+        textBox.innerHTML = `<div class="transcript-text">${escapeHtml(data.text || '')}</div>`;
+        textBox.dataset.loaded = '1';
+      } catch {
+        textBox.innerHTML = `<div class="error-text">${t('job.err.unreachable', 'Could not reach the server.')}</div>`;
+      }
+    }
+    textBox.hidden = false;
+    textBtn.textContent = t('history.hideText', 'Hide transcript');
+  });
+
+  downloadBtn.addEventListener('click', () => downloadTranscript(base, id));
+
+  deleteBtn.addEventListener('click', async () => {
+    const ok = confirm(t('history.delete.confirm', 'Delete this recording and its transcript? This cannot be undone.'));
+    if (!ok) return;
+    deleteBtn.disabled = true;
+    try {
+      await authorizedFetch(base, `/api/history/${id}`, { method: 'DELETE' });
+      card.remove();
+    } catch {
+      deleteBtn.disabled = false;
+    }
+  });
+}
+
 // ── "Server" tab ─────────────────────────────────────────────────────────
 const roleHost = document.getElementById('roleHost') as HTMLDivElement;
 const roleClient = document.getElementById('roleClient') as HTMLDivElement;
@@ -471,6 +616,7 @@ const modelSelect = document.getElementById('modelSelect') as HTMLSelectElement;
 const modelPathInput = document.getElementById('modelPathInput') as HTMLInputElement;
 const browseModelBtn = document.getElementById('browseModelBtn') as HTMLButtonElement;
 const clearModelBtn = document.getElementById('clearModelBtn') as HTMLButtonElement;
+const lanExposeCheckbox = document.getElementById('lanExposeCheckbox') as HTMLInputElement;
 
 let uiRole: 'host' | 'client' = 'host';
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -522,9 +668,11 @@ function renderServerState(state: AppState): void {
 
   if (stage === 'running' && state.server.port) {
     srvLanUrl.hidden = false;
-    srvLanUrl.textContent = t('srv.lanUrl', 'Available on the network: {url}', {
-      url: `http://${state.lan_ip || '127.0.0.1'}:${state.server.port}`,
-    });
+    srvLanUrl.textContent = state.lanExpose
+      ? t('srv.lanUrl', 'Available on the network: {url}', {
+          url: `http://${state.lan_ip || '127.0.0.1'}:${state.server.port}`,
+        })
+      : t('srv.localOnly', 'Only available on this computer.');
   } else {
     srvLanUrl.hidden = true;
   }
@@ -547,6 +695,7 @@ async function refreshServerTab(): Promise<void> {
   hostSecretInput.value = state.authSecret || '';
   modelSelect.value = state.modelPreset;
   setCustomModelPath(state.modelPath || '');
+  lanExposeCheckbox.checked = state.lanExpose;
   renderServerState(state);
   refreshTranscribeGate();
 }
@@ -565,6 +714,7 @@ srvToggleBtn.addEventListener('click', async () => {
       clientSecretInput.value,
       modelSelect.value,
       modelPathInput.value,
+      lanExposeCheckbox.checked,
     );
     await window.api.start_server();
   }
@@ -583,6 +733,7 @@ clientSaveBtn.addEventListener('click', async () => {
     clientSecretInput.value,
     state.modelPreset,
     state.modelPath,
+    state.lanExpose,
   );
   cachedToken = null; // the secret may have changed — the old token is no longer guaranteed valid
   clientCheckResult.textContent = t('client.saved', 'Saved.');
@@ -645,10 +796,13 @@ function applyStaticTranslations(lang: Lang): void {
 
   set('brandSub', 'app.tagline', 'Local transcription, powered by Whisper');
   set('navLabelUpload', 'nav.upload', 'Upload');
+  set('navLabelHistory', 'nav.history', 'History');
   set('navLabelServer', 'nav.server', 'Server');
   setTooltip('tabBtnTranscribe', 'nav.upload', 'Upload');
+  setTooltip('tabBtnHistory', 'nav.history', 'History');
   setTooltip('tabBtnServer', 'nav.server', 'Server');
   set('langSwitchLabel', 'lang.switch.label', 'Language');
+  set('historyTitle', 'history.title', 'History');
   set('serverTitle', 'server.title', 'Server');
   set('roleHostTitle', 'role.host.title', 'Server (host)');
   set('roleHostDesc', 'role.host.desc', 'This machine has a GPU and runs the transcription.');
@@ -662,6 +816,8 @@ function applyStaticTranslations(lang: Lang): void {
   set('browseModelBtn', 'model.browse', 'Browse...');
   set('clearModelBtn', 'model.clear', 'Clear');
   modelPathInput.placeholder = t('model.path.placeholder', 'No file selected');
+  set('lanExposeLabel', 'lan.expose.label', 'Expose to local network');
+  set('lanExposeHint', 'lan.expose.hint', 'Lets other devices on your network connect to this server. Turn off to only use it on this computer.');
   set('secretLabel', 'secret.label', 'Access secret key');
   set(
     'secretHint',

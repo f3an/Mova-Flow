@@ -34,6 +34,10 @@
           <span class="nav-icon">⇪</span>
           <span class="nav-label" id="navLabelUpload">Upload</span>
         </button>
+        <button class="nav-item" id="tabBtnHistory" data-tooltip="History" aria-label="History">
+          <span class="nav-icon">⏱</span>
+          <span class="nav-label" id="navLabelHistory">History</span>
+        </button>
         <button class="nav-item" id="tabBtnServer" data-tooltip="Server" aria-label="Server">
           <span class="nav-icon">⚙</span>
           <span class="nav-label" id="navLabelServer">Server</span>
@@ -54,6 +58,11 @@
     <main class="content">
       <div id="tab-transcribe" class="panel">
         <div id="transcribeGate"></div>
+      </div>
+
+      <div id="tab-history" class="panel" hidden>
+        <h2 class="panel-title" id="historyTitle">History</h2>
+        <div id="historyGate"></div>
       </div>
 
       <div id="tab-server" class="panel" hidden>
@@ -77,6 +86,14 @@
               <input type="number" id="hostPortInput" value="5000">
             </div>
           </div>
+
+          <label class="checkbox-row">
+            <input type="checkbox" id="lanExposeCheckbox">
+            <span id="lanExposeLabel">Expose to local network</span>
+          </label>
+          <p class="secret-hint" id="lanExposeHint">
+            Lets other devices on your network connect to this server. Turn off to only use it on this computer.
+          </p>
 
           <div class="secret-box">
             <label for="modelSelect" id="modelSelectLabel">Whisper model</label>

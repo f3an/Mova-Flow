@@ -485,8 +485,33 @@ select {
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 14px;
+}
+
+/* History cards: buttons sit directly in the card (no padded wrapper like
+ * .transcript-box gives the Upload tab's job actions), so they need their
+ * own horizontal breathing room to match .job-head/.progress-text above. */
+.job > .actions {
+  padding: 2px 20px 20px;
+  margin-top: 4px;
+}
+
+.job > .history-audio:has(audio) {
+  padding: 14px 20px 0;
+}
+
+.history-audio audio {
+  width: 100%;
+}
+
+/* Only when the transcript toggle sits below an already-padded button row
+ * (History), not when it's the Upload tab's self-contained result box. */
+.actions + .transcript-box {
+  margin: 6px 20px 20px;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--line);
 }
 
 button.action {
@@ -605,6 +630,22 @@ button.action.danger {
 .field-row input:disabled {
   background: #ece9dd;
   color: #8a8672;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.checkbox-row input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--moss);
+  cursor: pointer;
 }
 
 .srv-status-row {
