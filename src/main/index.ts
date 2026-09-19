@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain, IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, IpcMainInvokeEvent } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -109,6 +109,42 @@ function setServerState(patch: Partial<ServerState>): void {
   serverState = { ...serverState, ...patch };
 }
 
+let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+// Set by the tray's "Exit" item (and by Cmd+Q on macOS) before any window
+// actually closes, so the close handler below knows this is a real quit and
+// not just the user clicking the titlebar's close button.
+let isQuitting = false;
+
+function showMainWindow(): void {
+  if (mainWindow) {
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    createWindow();
+  }
+}
+
+// Windows/Linux only — clicking the titlebar close button hides the app to
+// the tray instead of quitting it, same as most tray-resident apps (the
+// server should keep running until the user explicitly chooses Exit).
+// macOS already has its own convention for this (dock icon stays, the app
+// only fully quits on Cmd+Q), so it's left out of this entirely.
+function createTray(): void {
+  if (process.platform === 'darwin') return;
+
+  tray = new Tray(path.join(__dirname, '..', '..', 'build', 'icons', '16x16.png'));
+  tray.setToolTip('Mova Flow');
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Open Mova Flow', click: showMainWindow },
+      { type: 'separator' },
+      { label: 'Exit', click: () => app.quit() },
+    ]),
+  );
+  tray.on('click', showMainWindow);
+}
+
 function createWindow(): void {
   const win = new BrowserWindow({
     title: 'Mova Flow',
@@ -138,6 +174,15 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+  mainWindow = win;
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+  });
+  win.on('close', (event) => {
+    if (isQuitting || process.platform === 'darwin') return;
+    event.preventDefault();
+    win.hide();
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
@@ -307,6 +352,7 @@ ipcMain.handle('delete-client-history-entry', (_evt: IpcMainInvokeEvent, id: str
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   createWindow();
+  createTray();
   // Only auto-start on a machine that has already been set up (config.json
   // exists) — a fresh install must not silently kick off a multi-GB model
   // download before the user has even seen the Server tab and chosen a role.
@@ -314,6 +360,13 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+// Fires before any window's own 'close' event, on both a tray "Exit" click
+// and macOS's Cmd+Q — marks this as a real quit so the close handler in
+// createWindow() lets the window actually close instead of just hiding it.
+app.on('before-quit', () => {
+  isQuitting = true;
 });
 
 app.on('window-all-closed', () => {

@@ -24,6 +24,8 @@
     "publish": null,
     "files": [
       "dist/**/*",
+      "build/icon.png",
+      "build/icons/**/*",
       "package.json"
     ],
     "win": {
