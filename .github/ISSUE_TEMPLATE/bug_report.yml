@@ -1,0 +1,65 @@
+name: Bug report
+description: Something in Mova Flow isn't working as expected
+labels: ['bug']
+body:
+  - type: dropdown
+    id: role
+    attributes:
+      label: Role
+      description: Which role was this on?
+      options:
+        - Server (host)
+        - Client
+        - Both / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Mova Flow version
+      description: Shown in the installer filename, or check package.json if running from source.
+      placeholder: '1.0.0'
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: 'Windows 11 23H2'
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU (host role only)
+      description: Relevant for the CPU-vs-CUDA whisper.cpp build and model download step.
+      placeholder: 'NVIDIA RTX 4060, or "none"'
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Set role to ...
+        2. Upload a .wav file
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs, error messages, or screenshots
+      description: Server-tab error banner text, or the Server Message shown after a failed start, is especially useful.
+      render: shell

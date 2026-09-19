@@ -1,0 +1,82 @@
+name: Release
+
+# The host role only runs on Windows (whisper-cli.exe, PowerShell Expand-Archive,
+# nvidia-smi — see docs/ARCHITECTURE.md#platform-constraints); the macOS build is
+# client-role only (UI + networking, no local recognition). GitHub also attaches
+# an automatic "Source code (zip)" asset to every release — nothing to build for that.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: mova-flow-windows
+            artifact_paths: |
+              release/*.exe
+              release/*.exe.blockmap
+              release/latest.yml
+          - os: macos-latest
+            artifact_name: mova-flow-macos
+            artifact_paths: |
+              release/*.dmg
+              release/*.dmg.blockmap
+              release/latest-mac.yml
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build installer
+        run: npm run dist
+        env:
+          # No code-signing certificate configured — build unsigned installers
+          # rather than have electron-builder fail looking for one.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_paths }}
+          if-no-files-found: warn
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/**/*
+          generate_release_notes: true

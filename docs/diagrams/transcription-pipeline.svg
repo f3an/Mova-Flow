@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 960" role="img" aria-label="Pipeline from a dropped audio file to a saved transcript: the browser optionally re-encodes the file to WAV, uploads it, whisper-cli streams back timestamped segments, and the result is either saved to this machine's history or kept only in memory, depending on whether the request came from the loopback address.">
+  <defs>
+    <marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2c4235"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="960" fill="#f7f5ee"/>
+
+  <!-- S1 -->
+  <rect x="100" y="30" width="700" height="70" rx="8" fill="#ffffff" stroke="#2c4235" stroke-width="2"/>
+  <text x="450" y="58" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="700" fill="#1c2e23">Browser — Upload tab</text>
+  <text x="450" y="78" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#4b5a50">user drops or picks an audio file (renderer.ts)</text>
+
+  <line x1="450" y1="100" x2="450" y2="130" stroke="#2c4235" stroke-width="1.8" marker-end="url(#arrow3)"/>
+
+  <!-- S2 -->
+  <rect x="100" y="130" width="700" height="92" rx="8" fill="#ffffff" stroke="#2c4235" stroke-width="2"/>
+  <text x="450" y="153" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="700" fill="#1c2e23">Format check + in-browser conversion</text>
+  <text x="450" y="172" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#4b5a50">.mp3 / .wav / .ogg / .flac → sent unchanged (whisper-cli reads these via miniaudio)</text>
+  <text x="450" y="190" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#4b5a50">.m4a / .mov → decodeAudioData → OfflineAudioContext resample to 16kHz mono → encodeWav()</text>
+  <text x="450" y="208" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#8a8a7a">prepareFileForUpload() — no server-side conversion exists</text>
+
+  <line x1="450" y1="222" x2="450" y2="252" stroke="#2c4235" stroke-width="1.8" marker-end="url(#arrow3)"/>
+
+  <!-- S3 -->
+  <rect x="100" y="252" width="700" height="90" rx="8" fill="#ffffff" stroke="#2c4235" stroke-width="2"/>
+  <text x="450" y="275" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="700" fill="#1c2e23">POST /api/transcribe — server.ts</text>
+  <text x="450" y="294" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#4b5a50">multipart file + Authorization: Bearer &lt;token&gt;</text>
+  <text x="450" y="312" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#4b5a50">rateLimiter → requireAuth → extension allow-list → multer saves to uploads/</text>
+  <text x="450" y="330" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#8a8a7a">responds immediately with { job_id }; work continues in runJob()</text>
+
+  <line x1="450" y1="342" x2="450" y2="372" stroke="#2c4235" stroke-width="1.8" marker-end="url(#arrow3)"/>
+
+  <!-- S4 -->
+  <rect x="100" y="372" width="700" height="100" rx="8" fill="#fbeee7" stroke="#a8461f" stroke-width="2"/>
+  <text x="450" y="395" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="700" fill="#1c2e23">runJob() spawns whisper-cli.exe — engine.ts</text>
+  <text x="450" y="414" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#4b5a50">args: -m &lt;model.bin&gt; -f &lt;file&gt; -l &lt;lang|auto&gt;</text>
+  <text x="450" y="432" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#4b5a50">stdout parsed live — SEGMENT_RE: "[hh:mm:ss.mmm --&gt; …] text", LANG_RE: "auto-detected language: xx"</text>
+  <text x="450" y="450" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#4b5a50">each match streamed back as job.progress = "Processed segments: N"</text>
+  <text x="450" y="466" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#8a8a7a">exit code 0 but "failed to read audio" in stderr ⇒ rejected anyway</text>
+
+  <line x1="450" y1="472" x2="450" y2="510" stroke="#2c4235" stroke-width="1.8" marker-end="url(#arrow3)"/>
+
+  <!-- Diamond -->
+  <polygon points="450,510 560,570 450,630 340,570" fill="#ffffff" stroke="#2c4235" stroke-width="2"/>
+  <text x="450" y="562" text-anchor="middle" font-family="sans-serif" font-size="11.5" font-weight="700" fill="#1c2e23">request from</text>
+  <text x="450" y="578" text-anchor="middle" font-family="sans-serif" font-size="11.5" font-weight="700" fill="#1c2e23">127.0.0.1?</text>
+  <text x="450" y="595" text-anchor="middle" font-family="sans-serif" font-size="9.5" fill="#8a8a7a">isLoopback(req.ip)</text>
+
+  <!-- Yes branch -->
+  <line x1="380" y1="605" x2="250" y2="660" stroke="#2c4235" stroke-width="1.8" marker-end="url(#arrow3)"/>
+  <text x="290" y="628" font-family="sans-serif" font-size="11" fill="#1c2e23">yes</text>
+  <rect x="80" y="660" width="340" height="120" rx="8" fill="#ffffff" stroke="#2c4235" stroke-width="2"/>
+  <text x="250" y="683" text-anchor="middle" font-family="sans-serif" font-size="12.5" font-weight="700" fill="#1c2e23">Local job (this machine's own tab)</text>
+  <text x="250" y="702" text-anchor="middle" font-family="sans-serif" font-size="10.5" fill="#4b5a50">write transcripts/&lt;id&gt;.txt</text>
+  <text x="250" y="719" text-anchor="middle" font-family="sans-serif" font-size="10.5" fill="#4b5a50">move audio → audio/&lt;id&gt;.ext</text>
+  <text x="250" y="736" text-anchor="middle" font-family="sans-serif" font-size="10.5" fill="#4b5a50">prepend entry to history.json</text>
+  <text x="250" y="753" text-anchor="middle" font-family="sans-serif" font-size="10.5" fill="#4b5a50">→ shows up in the History tab</text>
+
+  <!-- No branch -->
+  <line x1="520" y1="605" x2="650" y2="660" stroke="#2c4235" stroke-width="1.8" marker-end="url(#arrow3)"/>
+  <text x="610" y="628" font-family="sans-serif" font-size="11" fill="#1c2e23">no</text>
+  <rect x="480" y="660" width="340" height="120" rx="8" fill="#ffffff" stroke="#2c4235" stroke-width="2"/>
+  <text x="650" y="683" text-anchor="middle" font-family="sans-serif" font-size="12.5" font-weight="700" fill="#1c2e23">Remote job (another LAN device)</text>
+  <text x="650" y="702" text-anchor="middle" font-family="sans-serif" font-size="10.5" fill="#4b5a50">delete the temp upload file</text>
+  <text x="650" y="719" text-anchor="middle" font-family="sans-serif" font-size="10.5" fill="#4b5a50">no transcript file, no history entry</text>
+  <text x="650" y="736" text-anchor="middle" font-family="sans-serif" font-size="10.5" fill="#4b5a50">result kept only in the in-memory</text>
+  <text x="650" y="753" text-anchor="middle" font-family="sans-serif" font-size="10.5" fill="#4b5a50">jobs map, for this run only</text>
+
+  <line x1="250" y1="780" x2="250" y2="820" stroke="#2c4235" stroke-width="1.8"/>
+  <line x1="650" y1="780" x2="650" y2="820" stroke="#2c4235" stroke-width="1.8"/>
+  <line x1="250" y1="820" x2="650" y2="820" stroke="#2c4235" stroke-width="1.8"/>
+  <line x1="450" y1="820" x2="450" y2="850" stroke="#2c4235" stroke-width="1.8" marker-end="url(#arrow3)"/>
+
+  <!-- Final -->
+  <rect x="100" y="850" width="700" height="90" rx="8" fill="#ffffff" stroke="#2c4235" stroke-width="2"/>
+  <text x="450" y="874" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="700" fill="#1c2e23">Client side</text>
+  <text x="450" y="893" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#4b5a50">polls GET /api/status/:id every 1.5s until "done", then GET /api/download/:id</text>
+  <text x="450" y="911" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#8a8a7a">a client machine also mirrors the finished text into its own clientHistory.ts over IPC</text>
+</svg>

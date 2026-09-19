@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest an improvement or a new capability for Mova Flow
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do that Mova Flow doesn't support today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does this fit?
+      multiple: true
+      options:
+        - Upload / transcription
+        - History
+        - Server / networking / auth
+        - UI / i18n
+        - Packaging / installer
+        - Other
