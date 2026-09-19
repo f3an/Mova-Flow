@@ -50,7 +50,7 @@ Every tagged release is built automatically by [`.github/workflows/release.yml`]
 - **Transcription history**: kept alongside the original audio on the host; kept separately and locally on the client, and never reaches the host at all (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#security-model)).
 - **Access protection**: a shared secret key plus short-lived bearer tokens (HS256, 12h TTL) on every API request.
 - **English and Ukrainian UI**, switchable on the fly.
-- **Runs quietly in the tray** (Windows/Linux): closing the window hides it instead of quitting, so the host keeps serving — right-click the tray icon → **Exit** to actually shut it down.
+- **Runs quietly in the tray**: closing the window hides it instead of quitting, so the host keeps serving — right-click the tray icon (menu bar on macOS) → **Exit** to actually shut it down.
 
 ## How it's built
 
