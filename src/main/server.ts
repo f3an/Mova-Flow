@@ -59,6 +59,13 @@ function saveHistory(userDataDir: string, entries: HistoryEntry[]): void {
   fs.writeFileSync(historyPath(userDataDir), JSON.stringify(entries, null, 2), 'utf-8');
 }
 
+// Requests from the host's own Upload tab always arrive over loopback (see the
+// `base` URL comment below); anything else came from another computer on the
+// LAN and must leave no trace on this machine once transcription is done.
+function isLoopback(ip: string): boolean {
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
 const jobs = new Map<string, Job>();
 
 function runJob(
@@ -70,6 +77,7 @@ function runJob(
   modelFilePath: string,
   outputDir: string,
   audioDir: string,
+  isLocal: boolean,
 ): void {
   const job = jobs.get(jobId)!;
   job.status = 'processing';
@@ -80,26 +88,34 @@ function runJob(
     if (j) j.progress = progress;
   })
     .then((result) => {
-      const outputFile = `${jobId}.txt`;
-      fs.writeFileSync(path.join(outputDir, outputFile), result.text, 'utf-8');
-
       const ext = path.extname(originalname).toLowerCase();
-      fs.renameSync(filePath, path.join(audioDir, `${jobId}${ext}`));
 
-      const history = loadHistory(userDataDir);
-      history.unshift({
-        id: jobId,
-        filename: originalname,
-        language: result.detectedLanguage,
-        createdAt: Date.now(),
-        audioExt: ext,
-      });
-      saveHistory(userDataDir, history);
+      if (isLocal) {
+        const outputFile = `${jobId}.txt`;
+        fs.writeFileSync(path.join(outputDir, outputFile), result.text, 'utf-8');
+        fs.renameSync(filePath, path.join(audioDir, `${jobId}${ext}`));
+
+        const history = loadHistory(userDataDir);
+        history.unshift({
+          id: jobId,
+          filename: originalname,
+          language: result.detectedLanguage,
+          createdAt: Date.now(),
+          audioExt: ext,
+        });
+        saveHistory(userDataDir, history);
+
+        const j = jobs.get(jobId)!;
+        j.outputFile = outputFile;
+      } else {
+        // No history entry, no transcript file, no retained audio — the result
+        // text lives only in the in-memory `jobs` entry below, for this run.
+        fs.unlink(filePath, () => {});
+      }
 
       const j = jobs.get(jobId)!;
       j.status = 'done';
       j.result = result.text;
-      j.outputFile = outputFile;
       j.detectedLanguage = result.detectedLanguage;
       j.progress = 'Done.';
     })
@@ -186,6 +202,17 @@ export class ServerController {
       next();
     };
 
+    // History is this machine's own local record — it must never cross to
+    // another computer, even an authorized one, so every history route is
+    // loopback-only regardless of the shared secret.
+    const requireLocal = (req: Request, res: Response, next: NextFunction): void => {
+      if (!isLoopback(req.ip || '')) {
+        res.status(403).json({ error: 'History is only available on this machine.' });
+        return;
+      }
+      next();
+    };
+
     const upload = multer({ dest: uploadDir });
 
     app.post('/api/transcribe', requireAuth, upload.single('file'), (req: Request, res: Response) => {
@@ -205,8 +232,9 @@ export class ServerController {
 
       const language = (req.body.language as string) || 'auto';
       const jobId = randomUUID().replace(/-/g, '').slice(0, 12);
+      const isLocal = isLoopback(req.ip || '');
       jobs.set(jobId, { status: 'queued', progress: 'Queued...', filename: file.originalname });
-      runJob(jobId, file.path, file.originalname, language, userDataDir, modelFilePath, outputDir, audioDir);
+      runJob(jobId, file.path, file.originalname, language, userDataDir, modelFilePath, outputDir, audioDir, isLocal);
 
       res.json({ job_id: jobId });
     });
@@ -227,18 +255,32 @@ export class ServerController {
 
     app.get('/api/download/:id', requireAuth, (req: Request<{ id: string }>, res: Response) => {
       const { id } = req.params;
-      if (!idParamSafe(id) || !fs.existsSync(path.join(outputDir, `${id}.txt`))) {
+      if (!idParamSafe(id)) {
         res.status(404).json({ error: 'Transcript not ready yet' });
         return;
       }
-      res.download(path.join(outputDir, `${id}.txt`), `transcript_${id}.txt`);
+      const outputPath = path.join(outputDir, `${id}.txt`);
+      if (fs.existsSync(outputPath)) {
+        res.download(outputPath, `transcript_${id}.txt`);
+        return;
+      }
+      // Remote jobs never touch disk — the finished text lives only in the
+      // in-memory job entry, for as long as the server process stays up.
+      const job = jobs.get(id);
+      if (job?.status === 'done' && job.result !== undefined) {
+        res.type('txt');
+        res.set('Content-Disposition', `attachment; filename="transcript_${id}.txt"`);
+        res.send(job.result);
+        return;
+      }
+      res.status(404).json({ error: 'Transcript not ready yet' });
     });
 
-    app.get('/api/history', requireAuth, (_req: Request, res: Response) => {
+    app.get('/api/history', requireAuth, requireLocal, (_req: Request, res: Response) => {
       res.json({ items: loadHistory(userDataDir) });
     });
 
-    app.get('/api/history/:id/text', requireAuth, (req: Request<{ id: string }>, res: Response) => {
+    app.get('/api/history/:id/text', requireAuth, requireLocal, (req: Request<{ id: string }>, res: Response) => {
       const { id } = req.params;
       const textFile = path.join(outputDir, `${id}.txt`);
       if (!idParamSafe(id) || !fs.existsSync(textFile)) {
@@ -248,7 +290,7 @@ export class ServerController {
       res.json({ text: fs.readFileSync(textFile, 'utf-8') });
     });
 
-    app.get('/api/history/:id/audio', requireAuth, (req: Request<{ id: string }>, res: Response) => {
+    app.get('/api/history/:id/audio', requireAuth, requireLocal, (req: Request<{ id: string }>, res: Response) => {
       const { id } = req.params;
       const entry = loadHistory(userDataDir).find((e) => e.id === id);
       if (!idParamSafe(id) || !entry) {
@@ -264,7 +306,7 @@ export class ServerController {
       res.sendFile(audioFile);
     });
 
-    app.delete('/api/history/:id', requireAuth, (req: Request<{ id: string }>, res: Response) => {
+    app.delete('/api/history/:id', requireAuth, requireLocal, (req: Request<{ id: string }>, res: Response) => {
       const { id } = req.params;
       if (!idParamSafe(id)) {
         res.status(404).json({ error: 'Recording not found' });

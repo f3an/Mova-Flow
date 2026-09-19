@@ -685,8 +685,18 @@ function renderServerState(state: AppState): void {
   }
 }
 
+// History is this machine's own local record (the host refuses to serve it to
+// anyone else, see requireLocal in server.ts) — a client has nothing to show
+// there, so the tab is hidden rather than left to always error out.
+function applyRoleVisibility(role: 'host' | 'client'): void {
+  const hideHistory = role === 'client';
+  tabBtnHistory.hidden = hideHistory;
+  if (hideHistory && !tabHistory.hidden) showTab('transcribe');
+}
+
 async function refreshServerTab(): Promise<void> {
   const state = await window.api.get_state();
+  applyRoleVisibility(state.role);
   selectRole(uiRole || state.role);
   if (document.activeElement !== hostPortInput) hostPortInput.value = String(state.port);
   if (document.activeElement !== clientHostInput) clientHostInput.value = state.host;
@@ -847,6 +857,7 @@ langSwitch.addEventListener('change', async () => {
 async function init(): Promise<void> {
   const state = await window.api.get_state();
   uiRole = state.role;
+  applyRoleVisibility(state.role);
   setLang(state.language || 'en');
   langSwitch.value = getLang();
   applyStaticTranslations(getLang());
