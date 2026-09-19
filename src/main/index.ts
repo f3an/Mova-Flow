@@ -111,9 +111,9 @@ function setServerState(patch: Partial<ServerState>): void {
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-// Set by the tray's "Exit" item (and by Cmd+Q on macOS) before any window
-// actually closes, so the close handler below knows this is a real quit and
-// not just the user clicking the titlebar's close button.
+// Set by the tray's "Exit" item before any window actually closes, so the
+// close handler below knows this is a real quit and not just the user
+// clicking the titlebar's close button.
 let isQuitting = false;
 
 function showMainWindow(): void {
@@ -125,14 +125,12 @@ function showMainWindow(): void {
   }
 }
 
-// Windows/Linux only — clicking the titlebar close button hides the app to
-// the tray instead of quitting it, same as most tray-resident apps (the
-// server should keep running until the user explicitly chooses Exit).
-// macOS already has its own convention for this (dock icon stays, the app
-// only fully quits on Cmd+Q), so it's left out of this entirely.
+// Clicking the titlebar close button hides the app to the tray instead of
+// quitting it, same as most tray-resident apps — the server should keep
+// running until the user explicitly chooses Exit. Same behavior on every
+// platform (Tray works the same in the Windows/Linux tray and the macOS
+// menu bar), so there's no OS check here.
 function createTray(): void {
-  if (process.platform === 'darwin') return;
-
   tray = new Tray(path.join(__dirname, '..', '..', 'build', 'icons', '16x16.png'));
   tray.setToolTip('Mova Flow');
   tray.setContextMenu(
@@ -180,7 +178,7 @@ function createWindow(): void {
     if (mainWindow === win) mainWindow = null;
   });
   win.on('close', (event) => {
-    if (isQuitting || process.platform === 'darwin') return;
+    if (isQuitting) return;
     event.preventDefault();
     win.hide();
   });
