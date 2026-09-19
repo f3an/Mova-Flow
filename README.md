@@ -6,6 +6,8 @@
 
 A local audio transcription app built on [whisper.cpp](https://github.com/ggml-org/whisper.cpp) — no Python, no cloud, recordings never leave your network. An Electron app for Windows: one machine with a GPU does the recognition, any number of other devices on the local network use it as clients.
 
+**[f3an.github.io/Mova-Flow →](https://f3an.github.io/Mova-Flow/)**
+
 ![Upload tab](docs/screenshots/01-upload.png)
 
 ## Contents
