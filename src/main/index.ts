@@ -5,6 +5,13 @@ import * as os from 'os';
 import { controller } from './server';
 import { ensureEngine, modelPath, DEFAULT_MODEL_PRESET, ModelChoice, ModelPreset } from './engine';
 import { generateSecret, issueToken } from './auth';
+import {
+  addClientHistoryEntry,
+  deleteClientHistoryEntry,
+  getClientHistory,
+  getClientHistoryAudio,
+  getClientHistoryText,
+} from './clientHistory';
 
 type UiLang = 'en' | 'uk';
 
@@ -257,6 +264,45 @@ ipcMain.handle(
     }
   },
 );
+
+ipcMain.handle(
+  'save-client-history-entry',
+  (
+    _evt: IpcMainInvokeEvent,
+    filename: string,
+    language: string,
+    audioExt: string,
+    audioBytes: ArrayBuffer,
+    text: string,
+  ) => {
+    const entry = addClientHistoryEntry(
+      app.getPath('userData'),
+      filename,
+      language,
+      audioExt,
+      Buffer.from(audioBytes),
+      text,
+    );
+    return { entry };
+  },
+);
+
+ipcMain.handle('get-client-history', () => ({
+  items: getClientHistory(app.getPath('userData')),
+}));
+
+ipcMain.handle('get-client-history-text', (_evt: IpcMainInvokeEvent, id: string) => ({
+  text: getClientHistoryText(app.getPath('userData'), id),
+}));
+
+ipcMain.handle('get-client-history-audio', (_evt: IpcMainInvokeEvent, id: string) => {
+  const result = getClientHistoryAudio(app.getPath('userData'), id);
+  return { data: result?.data ?? null, ext: result?.ext ?? null };
+});
+
+ipcMain.handle('delete-client-history-entry', (_evt: IpcMainInvokeEvent, id: string) => ({
+  ok: deleteClientHistoryEntry(app.getPath('userData'), id),
+}));
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);

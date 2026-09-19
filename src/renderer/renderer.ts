@@ -29,6 +29,14 @@ interface IssuedToken {
   expiresAt: number;
 }
 
+interface ClientHistoryEntry {
+  id: string;
+  filename: string;
+  language: string;
+  createdAt: number;
+  audioExt: string;
+}
+
 interface WhisperApi {
   get_state(): Promise<AppState>;
   save_config(
@@ -47,6 +55,17 @@ interface WhisperApi {
   get_token(): Promise<IssuedToken>;
   set_language(lang: Lang): Promise<{ ok: boolean }>;
   choose_model_file(): Promise<{ path: string }>;
+  save_client_history_entry(
+    filename: string,
+    language: string,
+    audioExt: string,
+    audioBytes: ArrayBuffer,
+    text: string,
+  ): Promise<{ entry: ClientHistoryEntry }>;
+  get_client_history(): Promise<{ items: ClientHistoryEntry[] }>;
+  get_client_history_text(id: string): Promise<{ text: string | null }>;
+  get_client_history_audio(id: string): Promise<{ data: Uint8Array | null; ext: string | null }>;
+  delete_client_history_entry(id: string): Promise<{ ok: boolean }>;
 }
 
 declare global {
@@ -374,13 +393,27 @@ function wireTranscribeUI(base: string): void {
         renderError(jobCard, data.error);
         return;
       }
-      pollStatus(data.job_id, jobCard);
+      pollStatus(data.job_id, jobCard, file);
     } catch {
       renderError(jobCard, t('job.err.unreachable', 'Could not reach the server.'));
     }
   }
 
-  function pollStatus(jobId: string, card: HTMLDivElement): void {
+  // A client's own submissions are never saved by the host (see requireLocal
+  // in server.ts) — the only place left to keep "what I sent and what came
+  // back" is here, locally, once the result is in. `file` is the original
+  // pick, not the WAV `prepareFileForUpload` may have converted for upload,
+  // so re-listening plays back exactly what the user recorded.
+  async function saveToClientHistory(file: File, language: string, text: string): Promise<void> {
+    const state = await window.api.get_state();
+    if (state.role !== 'client') return;
+    const dot = file.name.lastIndexOf('.');
+    const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
+    const audioBytes = await file.arrayBuffer();
+    await window.api.save_client_history_entry(file.name, language, ext, audioBytes, text);
+  }
+
+  function pollStatus(jobId: string, card: HTMLDivElement, originalFile: File): void {
     const interval = setInterval(async () => {
       try {
         const res = await authorizedFetch(base, `/api/status/${jobId}`);
@@ -419,6 +452,7 @@ function wireTranscribeUI(base: string): void {
           progressEl?.replaceWith(box);
           box.querySelector('#copyBtn')?.addEventListener('click', (e) => copyText(e.currentTarget as HTMLButtonElement));
           box.querySelector('#downloadBtn')?.addEventListener('click', () => downloadTranscript(base, jobId));
+          void saveToClientHistory(originalFile, data.detectedLanguage || 'auto', data.result);
         }
 
         if (data.status === 'error') {
@@ -475,20 +509,100 @@ interface HistoryItem {
   audioExt: string;
 }
 
+// The host keeps its own history over HTTP (and refuses it to anyone but
+// itself — see requireLocal in server.ts); a client never gets to read that,
+// so it keeps a parallel record of its own sent/received jobs locally via IPC
+// (see clientHistory.ts). Both shapes are identical (HistoryItem); this just
+// picks where the four operations go.
+interface HistoryBackend {
+  list(): Promise<HistoryItem[]>;
+  text(id: string): Promise<string>;
+  audioBlob(id: string, ext: string): Promise<Blob>;
+  remove(id: string): Promise<void>;
+}
+
+function hostHistoryBackend(base: string): HistoryBackend {
+  return {
+    async list() {
+      const res = await authorizedFetch(base, '/api/history');
+      if (!res.ok) throw new Error('history unavailable');
+      return (await res.json()).items || [];
+    },
+    async text(id) {
+      const res = await authorizedFetch(base, `/api/history/${id}/text`);
+      if (!res.ok) throw new Error('text unavailable');
+      return (await res.json()).text || '';
+    },
+    async audioBlob(id) {
+      const res = await authorizedFetch(base, `/api/history/${id}/audio`);
+      if (!res.ok) throw new Error('audio unavailable');
+      return res.blob();
+    },
+    async remove(id) {
+      await authorizedFetch(base, `/api/history/${id}`, { method: 'DELETE' });
+    },
+  };
+}
+
+const CLIENT_AUDIO_MIME: Record<string, string> = {
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.flac': 'audio/flac',
+  '.m4a': 'audio/mp4',
+  '.mov': 'video/quicktime',
+};
+
+function clientHistoryBackend(): HistoryBackend {
+  return {
+    async list() {
+      return (await window.api.get_client_history()).items;
+    },
+    async text(id) {
+      const { text } = await window.api.get_client_history_text(id);
+      if (text === null) throw new Error('text unavailable');
+      return text;
+    },
+    async audioBlob(id, ext) {
+      const { data } = await window.api.get_client_history_audio(id);
+      if (!data) throw new Error('audio unavailable');
+      return new Blob([data], { type: CLIENT_AUDIO_MIME[ext] || 'application/octet-stream' });
+    },
+    async remove(id) {
+      await window.api.delete_client_history_entry(id);
+    },
+  };
+}
+
+function downloadTextAsFile(text: string, filename: string): void {
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 async function refreshHistoryTab(): Promise<void> {
   const gate = document.getElementById('historyGate') as HTMLDivElement;
   const state = await window.api.get_state();
-  const base = serverBaseUrl(state);
 
-  if (base === null) {
-    gate.innerHTML = `<div class="banner">${t('banner.off', 'Server is off. Go to the Server tab and press Start.')}</div>`;
-    return;
+  let backend: HistoryBackend;
+  if (state.role === 'client') {
+    backend = clientHistoryBackend();
+  } else {
+    const base = serverBaseUrl(state);
+    if (base === null) {
+      gate.innerHTML = `<div class="banner">${t('banner.off', 'Server is off. Go to the Server tab and press Start.')}</div>`;
+      return;
+    }
+    backend = hostHistoryBackend(base);
   }
 
   let items: HistoryItem[];
   try {
-    const res = await authorizedFetch(base, '/api/history');
-    items = (await res.json()).items || [];
+    items = await backend.list();
   } catch {
     gate.innerHTML = `<div class="banner">${t('job.err.unreachable', 'Could not reach the server.')}</div>`;
     return;
@@ -500,7 +614,7 @@ async function refreshHistoryTab(): Promise<void> {
   }
 
   gate.innerHTML = items.map((item) => historyCardHtml(item)).join('');
-  gate.querySelectorAll<HTMLDivElement>('.job').forEach((card) => wireHistoryCard(card, base));
+  gate.querySelectorAll<HTMLDivElement>('.job').forEach((card) => wireHistoryCard(card, backend));
 }
 
 function historyCardHtml(item: HistoryItem): string {
@@ -532,8 +646,9 @@ function buildAudioPlayer(container: HTMLElement, src: string): void {
   container.appendChild(audio);
 }
 
-function wireHistoryCard(card: HTMLDivElement, base: string): void {
+function wireHistoryCard(card: HTMLDivElement, backend: HistoryBackend): void {
   const id = card.dataset.id!;
+  const ext = card.dataset.ext!;
   const playBtn = card.querySelector('[data-action="play"]') as HTMLButtonElement;
   const textBtn = card.querySelector('[data-action="text"]') as HTMLButtonElement;
   const downloadBtn = card.querySelector('[data-action="download"]') as HTMLButtonElement;
@@ -546,9 +661,7 @@ function wireHistoryCard(card: HTMLDivElement, base: string): void {
     playBtn.disabled = true;
     playBtn.textContent = t('history.loading', 'Loading...');
     try {
-      const res = await authorizedFetch(base, `/api/history/${id}/audio`);
-      if (!res.ok) throw new Error();
-      const blob = await res.blob();
+      const blob = await backend.audioBlob(id, ext);
       buildAudioPlayer(audioSlot, URL.createObjectURL(blob));
       playBtn.remove();
     } catch {
@@ -565,9 +678,8 @@ function wireHistoryCard(card: HTMLDivElement, base: string): void {
     }
     if (!textBox.dataset.loaded) {
       try {
-        const res = await authorizedFetch(base, `/api/history/${id}/text`);
-        const data = await res.json();
-        textBox.innerHTML = `<div class="transcript-text">${escapeHtml(data.text || '')}</div>`;
+        const text = await backend.text(id);
+        textBox.innerHTML = `<div class="transcript-text">${escapeHtml(text)}</div>`;
         textBox.dataset.loaded = '1';
       } catch {
         textBox.innerHTML = `<div class="error-text">${t('job.err.unreachable', 'Could not reach the server.')}</div>`;
@@ -577,14 +689,21 @@ function wireHistoryCard(card: HTMLDivElement, base: string): void {
     textBtn.textContent = t('history.hideText', 'Hide transcript');
   });
 
-  downloadBtn.addEventListener('click', () => downloadTranscript(base, id));
+  downloadBtn.addEventListener('click', async () => {
+    try {
+      const text = await backend.text(id);
+      downloadTextAsFile(text, `transcript_${id}.txt`);
+    } catch {
+      // Nothing sensible to do — the button just stays clickable to retry.
+    }
+  });
 
   deleteBtn.addEventListener('click', async () => {
     const ok = confirm(t('history.delete.confirm', 'Delete this recording and its transcript? This cannot be undone.'));
     if (!ok) return;
     deleteBtn.disabled = true;
     try {
-      await authorizedFetch(base, `/api/history/${id}`, { method: 'DELETE' });
+      await backend.remove(id);
       card.remove();
     } catch {
       deleteBtn.disabled = false;
@@ -685,18 +804,8 @@ function renderServerState(state: AppState): void {
   }
 }
 
-// History is this machine's own local record (the host refuses to serve it to
-// anyone else, see requireLocal in server.ts) — a client has nothing to show
-// there, so the tab is hidden rather than left to always error out.
-function applyRoleVisibility(role: 'host' | 'client'): void {
-  const hideHistory = role === 'client';
-  tabBtnHistory.hidden = hideHistory;
-  if (hideHistory && !tabHistory.hidden) showTab('transcribe');
-}
-
 async function refreshServerTab(): Promise<void> {
   const state = await window.api.get_state();
-  applyRoleVisibility(state.role);
   selectRole(uiRole || state.role);
   if (document.activeElement !== hostPortInput) hostPortInput.value = String(state.port);
   if (document.activeElement !== clientHostInput) clientHostInput.value = state.host;
@@ -857,7 +966,6 @@ langSwitch.addEventListener('change', async () => {
 async function init(): Promise<void> {
   const state = await window.api.get_state();
   uiRole = state.role;
-  applyRoleVisibility(state.role);
   setLang(state.language || 'en');
   langSwitch.value = getLang();
   applyStaticTranslations(getLang());

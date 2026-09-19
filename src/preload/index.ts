@@ -26,4 +26,15 @@ contextBridge.exposeInMainWorld('api', {
   regenerate_secret: () => ipcRenderer.invoke('regenerate-secret'),
   get_token: () => ipcRenderer.invoke('get-token'),
   set_language: (lang: string) => ipcRenderer.invoke('set-language', lang),
+  save_client_history_entry: (
+    filename: string,
+    language: string,
+    audioExt: string,
+    audioBytes: ArrayBuffer,
+    text: string,
+  ) => ipcRenderer.invoke('save-client-history-entry', filename, language, audioExt, audioBytes, text),
+  get_client_history: () => ipcRenderer.invoke('get-client-history'),
+  get_client_history_text: (id: string) => ipcRenderer.invoke('get-client-history-text', id),
+  get_client_history_audio: (id: string) => ipcRenderer.invoke('get-client-history-audio', id),
+  delete_client_history_entry: (id: string) => ipcRenderer.invoke('delete-client-history-entry', id),
 });
