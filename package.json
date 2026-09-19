@@ -1,5 +1,5 @@
 {
-  "name": "local-whisper-flow-desktop",
+  "name": "mova-flow",
   "version": "1.0.0",
   "description": "Mova Flow — a local transcription app built on Electron + whisper.cpp, no Python required.",
   "main": "dist/main/index.js",
