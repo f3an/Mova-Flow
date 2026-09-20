@@ -49,7 +49,27 @@
       "category": "public.app-category.productivity"
     },
     "dmg": {
-      "artifactName": "Mova-Flow-${version}.${ext}"
+      "artifactName": "Mova-Flow-${version}.${ext}",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220,
+          "type": "file"
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 270,
+          "y": 60,
+          "type": "file",
+          "path": "build/Install & Open.command",
+          "name": "Install & Open.command"
+        }
+      ]
     }
   },
   "devDependencies": {

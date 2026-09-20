@@ -36,7 +36,7 @@ Grab the latest build from **[github.com/f3an/Mova-Flow/releases/latest](https:/
 Installers aren't code-signed, so:
 
 - **Windows** may show a SmartScreen warning — click "More info" → "Run anyway".
-- **macOS** will flag the app as unverified — right-click the app → **Open** once, or run `xattr -cr "/Applications/Mova Flow.app"`.
+- **macOS** will refuse to open the app at all ("is damaged and can't be opened") — this is Gatekeeper reacting to an unsigned app downloaded from a browser, not actual corruption. The `.dmg` includes an **"Install & Open.command"** file — double-click it and it installs to `/Applications`, clears the quarantine flag, and launches the app in one step. (The command-line equivalent, if you'd rather: `xattr -cr "/Applications/Mova Flow.app"`.)
 
 Every tagged release is built automatically by [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
