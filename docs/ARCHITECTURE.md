@@ -9,6 +9,7 @@ This document covers the app's internals: the Electron process model, the audio 
 - [Security model](#security-model)
 - [On-disk data](#on-disk-data)
 - [Audio formats](#audio-formats)
+- [Network discovery](#network-discovery)
 - [Updates](#updates)
 - [Platform constraints](#platform-constraints)
 
@@ -77,6 +78,15 @@ Record IDs are 12-character hex strings (`randomUUID().replace(/-/g,'').slice(0,
 | `.mp3 .wav .ogg .flac` | sent unchanged — `whisper-cli.exe` reads these directly via `miniaudio` |
 | `.m4a .mov` | re-encoded in the browser to 16kHz mono WAV before upload (`prepareFileForUpload()`) |
 | anything else | rejected by the server (`400 Unsupported format`) before `whisper-cli.exe` ever runs |
+
+## Network discovery
+
+`src/main/discovery.ts` wraps `bonjour-service` (mDNS/DNS-SD — the same protocol AirDrop and network printers use) so a client doesn't have to know the host's IP up front:
+
+- **Host**: while `startServer()` is running with `lan_expose` on, it publishes a service under both its own machine name and a fixed `mova-flow.local` alias. The alias exists because a browser extension has no mDNS API to browse with (see [mova-flow-meet-recorder](https://github.com/f3an/mova-flow-meet-recorder)) — it can only ever try one well-known address directly, never enumerate what's on the network.
+- **Client**: the Server tab's **Scan network** button browses for ~2.5s (`discoverHosts()`) and renders whatever answered as clickable cards; picking one fills the same host/port fields manual entry uses. Discovery is pure convenience — it only ever writes into those fields, never bypasses them.
+- Only ever active while `lan_expose` is on: a loopback-only host has nothing reachable to advertise, and advertising it anyway would just leak the machine's hostname onto the LAN for no reason.
+- Depends on multicast actually reaching both machines — guest Wi-Fi with client isolation and some corporate networks block it, in which case manual IP entry is the only option, same as before this existed.
 
 ## Updates
 

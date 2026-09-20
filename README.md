@@ -52,6 +52,7 @@ Every tagged release is built automatically by [`.github/workflows/release.yml`]
 - **English and Ukrainian UI**, switchable on the fly.
 - **Runs quietly in the tray**: closing the window hides it instead of quitting, so the host keeps serving — right-click the tray icon (menu bar on macOS) → **Exit** to actually shut it down.
 - **Checks for updates on its own**: Windows/Linux download and install with one click; macOS (unsigned, so it can't self-install) just shows a banner linking to the latest release.
+- **Finds the host on the network for you**: a "Scan network" button on the client role uses mDNS to list available hosts — no need to type an IP, though you still can.
 
 ## How it's built
 
