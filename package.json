@@ -1,6 +1,6 @@
 {
   "name": "mova-flow",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Mova Flow — a local transcription app built on Electron + whisper.cpp, no Python required.",
   "main": "dist/main/index.js",
   "scripts": {
@@ -46,7 +46,13 @@
         "dmg"
       ],
       "icon": "build/icon.icns",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Mova Flow connects to other Mova Flow hosts on your local network to send audio for transcription, and discovers them automatically via Bonjour.",
+        "NSBonjourServices": [
+          "_mova-flow._tcp"
+        ]
+      }
     },
     "dmg": {
       "artifactName": "Mova-Flow-${version}.${ext}",
