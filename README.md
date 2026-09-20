@@ -51,6 +51,7 @@ Every tagged release is built automatically by [`.github/workflows/release.yml`]
 - **Access protection**: a shared secret key plus short-lived bearer tokens (HS256, 12h TTL) on every API request.
 - **English and Ukrainian UI**, switchable on the fly.
 - **Runs quietly in the tray**: closing the window hides it instead of quitting, so the host keeps serving — right-click the tray icon (menu bar on macOS) → **Exit** to actually shut it down.
+- **Checks for updates on its own**: Windows/Linux download and install with one click; macOS (unsigned, so it can't self-install) just shows a banner linking to the latest release.
 
 ## How it's built
 

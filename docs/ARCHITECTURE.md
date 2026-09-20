@@ -9,6 +9,7 @@ This document covers the app's internals: the Electron process model, the audio 
 - [Security model](#security-model)
 - [On-disk data](#on-disk-data)
 - [Audio formats](#audio-formats)
+- [Updates](#updates)
 - [Platform constraints](#platform-constraints)
 
 ## Electron processes
@@ -76,6 +77,16 @@ Record IDs are 12-character hex strings (`randomUUID().replace(/-/g,'').slice(0,
 | `.mp3 .wav .ogg .flac` | sent unchanged — `whisper-cli.exe` reads these directly via `miniaudio` |
 | `.m4a .mov` | re-encoded in the browser to 16kHz mono WAV before upload (`prepareFileForUpload()`) |
 | anything else | rejected by the server (`400 Unsupported format`) before `whisper-cli.exe` ever runs |
+
+## Updates
+
+`electron-updater` checks `github.com/f3an/Mova-Flow`'s releases on startup and every 6 hours after (`initAutoUpdater()` in `main/index.ts`), reading the `latest.yml`/`latest-mac.yml` that `release.yml` already publishes alongside each installer — no separate update server.
+
+- **Windows/Linux**: downloads silently in the background; once ready, the renderer shows a banner (`get-update-state` IPC, polled every 30s) with a **Restart to update** button that calls `autoUpdater.quitAndInstall()`.
+- **macOS**: only checks, never downloads. Squirrel.Mac verifies a downloaded update's code signature against the running app's before applying it, and this build has neither a signature nor a certificate to make one with — attempting an install would just fail. The renderer instead shows a **Download** banner linking to the Releases page (`shell.openExternal`).
+- Skipped entirely when running unpacked (`app.isPackaged` is false) — `npm run dev` has no `app-update.yml` for `electron-updater` to read, since electron-builder only writes that file during actual packaging.
+
+The `build.publish` block in `package.json` is what makes electron-builder generate `app-update.yml`/`latest*.yml` in the first place; `npm run dist` still passes `--publish never` so electron-builder never uploads anything itself — that stays the job of `release.yml`'s own `softprops/action-gh-release` step.
 
 ## Platform constraints
 
