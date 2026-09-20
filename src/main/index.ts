@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, IpcMainInvokeEvent, shell } from 'electron';
+import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, IpcMainInvokeEvent, net, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -339,16 +339,18 @@ ipcMain.handle('stop-server', async () => {
 ipcMain.handle(
   'check-remote',
   async (_evt: IpcMainInvokeEvent, host: string, port: number, secret: string) => {
-    // This fetch runs in the main process (Node/undici), not the renderer's
-    // Chromium network stack — a slower first connection here than in an
-    // actual browser tab to the same address is a real, observed pattern,
-    // not just theoretical, hence the generous timeout and the real error
-    // surfaced below instead of a blind "not responding".
+    // net.fetch (Chromium's own network stack) instead of the global fetch
+    // (Node/undici) — confirmed by testing that Node's fetch fails to reach
+    // some LAN hosts that Chromium (the renderer, a real browser, this app's
+    // own browser extension) connects to just fine from the same machine.
+    // Most likely macOS's per-process Local Network permission not covering
+    // Node's own networking the same way it covers Chromium's, but whatever
+    // the exact cause, routing through Chromium's stack sidesteps it.
     try {
-      const res = await fetch(`http://${host}:${port}/`, { signal: AbortSignal.timeout(8000) });
+      const res = await net.fetch(`http://${host}:${port}/`, { signal: AbortSignal.timeout(8000) });
       if (!res.ok) return { reachable: false, authOk: false, error: `HTTP ${res.status}` };
 
-      const authRes = await fetch(`http://${host}:${port}/api/auth`, {
+      const authRes = await net.fetch(`http://${host}:${port}/api/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ secret: secret || '' }),
