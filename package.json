@@ -9,7 +9,7 @@
     "build:renderer": "esbuild src/renderer/renderer.ts --bundle --platform=browser --format=iife --outfile=dist/renderer/renderer.js && node -e \"require('fs').mkdirSync('dist/renderer',{recursive:true});require('fs').copyFileSync('src/renderer/index.html','dist/renderer/index.html');require('fs').copyFileSync('src/renderer/style.css','dist/renderer/style.css')\"",
     "build": "npm run build:main && npm run build:renderer",
     "dev": "npm run build && electron .",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder --publish never"
   },
   "keywords": [],
   "author": "",
@@ -21,7 +21,13 @@
     "directories": {
       "output": "release"
     },
-    "publish": null,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "f3an",
+        "repo": "Mova-Flow"
+      }
+    ],
     "files": [
       "dist/**/*",
       "build/icon.png",
@@ -58,6 +64,7 @@
     "electron-winstaller@5.4.0": true
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "express": "^5.2.1",
     "multer": "^2.4.0"
   }

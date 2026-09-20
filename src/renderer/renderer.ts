@@ -66,6 +66,15 @@ interface WhisperApi {
   get_client_history_text(id: string): Promise<{ text: string | null }>;
   get_client_history_audio(id: string): Promise<{ data: Uint8Array | null; ext: string | null }>;
   delete_client_history_entry(id: string): Promise<{ ok: boolean }>;
+  get_update_state(): Promise<UpdateState>;
+  install_update(): Promise<void>;
+  open_releases_page(): Promise<void>;
+}
+
+interface UpdateState {
+  stage: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error';
+  version: string | null;
+  error: string | null;
 }
 
 declare global {
@@ -963,6 +972,35 @@ langSwitch.addEventListener('change', async () => {
 });
 
 // ── Init ─────────────────────────────────────────────────────────────────
+// ── Update banner ───────────────────────────────────────────────────────
+const updateBanner = document.getElementById('updateBanner') as HTMLDivElement;
+
+async function refreshUpdateBanner(): Promise<void> {
+  const state = await window.api.get_update_state();
+
+  // 'available' only reaches here on macOS — Windows/Linux go straight from
+  // available to downloading without user-visible interruption (see
+  // initAutoUpdater() in main/index.ts), so there's nothing to show them
+  // until the update is actually ready to install.
+  if (state.stage === 'downloaded') {
+    updateBanner.hidden = false;
+    updateBanner.innerHTML = `
+      <span>${t('update.downloaded', 'Mova Flow {version} is ready.', { version: state.version || '' })}</span>
+      <button class="action" id="updateInstallBtn">${t('update.restart', 'Restart to update')}</button>
+    `;
+    document.getElementById('updateInstallBtn')?.addEventListener('click', () => window.api.install_update());
+  } else if (state.stage === 'available' && window.platform === 'darwin') {
+    updateBanner.hidden = false;
+    updateBanner.innerHTML = `
+      <span>${t('update.available', 'Mova Flow {version} is available.', { version: state.version || '' })}</span>
+      <button class="action secondary" id="updateDownloadBtn">${t('update.download', 'Download')}</button>
+    `;
+    document.getElementById('updateDownloadBtn')?.addEventListener('click', () => window.api.open_releases_page());
+  } else {
+    updateBanner.hidden = true;
+  }
+}
+
 async function init(): Promise<void> {
   const state = await window.api.get_state();
   uiRole = state.role;
@@ -972,6 +1010,8 @@ async function init(): Promise<void> {
   document.title = 'Mova Flow';
   showTab('transcribe');
   refreshServerTab();
+  refreshUpdateBanner();
+  setInterval(refreshUpdateBanner, 30_000);
 }
 void tabbar; // tabbar is always visible in Electron, unlike the Python version
              // which hid it until window.pywebview appeared

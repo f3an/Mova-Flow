@@ -37,4 +37,7 @@ contextBridge.exposeInMainWorld('api', {
   get_client_history_text: (id: string) => ipcRenderer.invoke('get-client-history-text', id),
   get_client_history_audio: (id: string) => ipcRenderer.invoke('get-client-history-audio', id),
   delete_client_history_entry: (id: string) => ipcRenderer.invoke('delete-client-history-entry', id),
+  get_update_state: () => ipcRenderer.invoke('get-update-state'),
+  install_update: () => ipcRenderer.invoke('install-update'),
+  open_releases_page: () => ipcRenderer.invoke('open-releases-page'),
 });

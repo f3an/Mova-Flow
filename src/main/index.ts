@@ -1,7 +1,8 @@
-import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, IpcMainInvokeEvent, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { autoUpdater } from 'electron-updater';
 import { controller } from './server';
 import { ensureEngine, modelPath, DEFAULT_MODEL_PRESET, ModelChoice, ModelPreset } from './engine';
 import { generateSecret, issueToken } from './auth';
@@ -107,6 +108,49 @@ let serverState: ServerState = { stage: 'stopped', message: '', port: null, erro
 
 function setServerState(patch: Partial<ServerState>): void {
   serverState = { ...serverState, ...patch };
+}
+
+type UpdateStage = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error';
+
+interface UpdateState {
+  stage: UpdateStage;
+  version: string | null;
+  error: string | null;
+}
+
+let updateState: UpdateState = { stage: 'idle', version: null, error: null };
+
+function setUpdateState(patch: Partial<UpdateState>): void {
+  updateState = { ...updateState, ...patch };
+}
+
+/** electron-updater reads app-update.yml, which electron-builder only writes
+ * into a packaged build (see the `publish` block in package.json) — running
+ * unpacked via `electron .` has no such file and would just throw. */
+function initAutoUpdater(): void {
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on('checking-for-update', () => setUpdateState({ stage: 'checking' }));
+  autoUpdater.on('update-not-available', () => setUpdateState({ stage: 'not-available' }));
+  autoUpdater.on('error', (err) => setUpdateState({ stage: 'error', error: err.message }));
+  autoUpdater.on('download-progress', () => setUpdateState({ stage: 'downloading' }));
+  autoUpdater.on('update-downloaded', (info) => setUpdateState({ stage: 'downloaded', version: info.version }));
+
+  autoUpdater.on('update-available', (info) => {
+    setUpdateState({ stage: 'available', version: info.version });
+    // Without a code-signing certificate, Squirrel.Mac's own signature check
+    // rejects the downloaded update — so on macOS this only ever gets as far
+    // as "available" and the renderer points the user at the Releases page
+    // instead of installing anything.
+    if (process.platform !== 'darwin') void autoUpdater.downloadUpdate();
+  });
+
+  const check = () => void autoUpdater.checkForUpdates().catch(() => {});
+  check();
+  setInterval(check, 6 * 60 * 60 * 1000);
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -347,10 +391,21 @@ ipcMain.handle('delete-client-history-entry', (_evt: IpcMainInvokeEvent, id: str
   ok: deleteClientHistoryEntry(app.getPath('userData'), id),
 }));
 
+ipcMain.handle('get-update-state', () => updateState);
+
+ipcMain.handle('install-update', () => {
+  autoUpdater.quitAndInstall();
+});
+
+ipcMain.handle('open-releases-page', () => {
+  shell.openExternal('https://github.com/f3an/Mova-Flow/releases/latest');
+});
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   createWindow();
   createTray();
+  initAutoUpdater();
   // Only auto-start on a machine that has already been set up (config.json
   // exists) — a fresh install must not silently kick off a multi-GB model
   // download before the user has even seen the Server tab and chosen a role.

@@ -92,6 +92,11 @@ const UK: Record<string, string> = {
   'client.unreachable': 'Сервер не відповідає.',
   'client.badSecret': "З'єднання є, але секретний ключ невірний.",
   'client.ok': "З'єднання успішне, авторизація пройшла.",
+
+  'update.downloaded': 'Mova Flow {version} готова до встановлення.',
+  'update.restart': 'Перезапустити й оновити',
+  'update.available': 'Доступна Mova Flow {version}.',
+  'update.download': 'Завантажити',
 };
 
 let currentLang: Lang = 'en';

@@ -50,6 +50,19 @@ body {
   padding-left: 78px;
 }
 
+.update-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: var(--moss-dark);
+  color: rgba(233, 231, 220, 0.95);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
 .app {
   display: flex;
   flex: 1;
