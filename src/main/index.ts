@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { autoUpdater } from 'electron-updater';
 import { controller } from './server';
+import { startAdvertising, stopAdvertising, discoverHosts } from './discovery';
 import { ensureEngine, modelPath, DEFAULT_MODEL_PRESET, ModelChoice, ModelPreset } from './engine';
 import { generateSecret, issueToken } from './auth';
 import {
@@ -241,6 +242,7 @@ async function startServer(): Promise<void> {
     await ensureEngine(userDataDir, model, (message) => setServerState({ stage: 'installing', message }));
     setServerState({ stage: 'starting', message: 'Starting server...' });
     await controller.start(port, userDataDir, modelPath(userDataDir, model), cfg.lan_expose, () => authSecret);
+    if (cfg.lan_expose) startAdvertising(port);
     setServerState({ stage: 'running', message: 'Ready', port, error: null });
   } catch (err) {
     setServerState({ stage: 'error', message: '', error: (err as Error).message });
@@ -328,6 +330,7 @@ ipcMain.handle('start-server', async () => {
 
 ipcMain.handle('stop-server', async () => {
   await controller.stop();
+  stopAdvertising();
   setServerState({ stage: 'stopped', message: '', port: null, error: null });
   return { ok: true };
 });
@@ -401,6 +404,8 @@ ipcMain.handle('open-releases-page', () => {
   shell.openExternal('https://github.com/f3an/Mova-Flow/releases/latest');
 });
 
+ipcMain.handle('discover-hosts', async () => ({ hosts: await discoverHosts() }));
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   createWindow();
@@ -424,5 +429,6 @@ app.on('before-quit', () => {
 
 app.on('window-all-closed', () => {
   controller.stop();
+  stopAdvertising();
   if (process.platform !== 'darwin') app.quit();
 });

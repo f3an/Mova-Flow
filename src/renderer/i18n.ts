@@ -92,6 +92,10 @@ const UK: Record<string, string> = {
   'client.unreachable': 'Сервер не відповідає.',
   'client.badSecret': "З'єднання є, але секретний ключ невірний.",
   'client.ok': "З'єднання успішне, авторизація пройшла.",
+  'client.scan': 'Знайти в мережі',
+  'client.scanning': 'Пошук...',
+  'client.scan.empty': 'Нічого не знайдено — введи хост вручну нижче.',
+  'client.scan.hint': 'Знаходить хости з увімкненим "Доступ з локальної мережі".',
 
   'update.downloaded': 'Mova Flow {version} готова до встановлення.',
   'update.restart': 'Перезапустити й оновити',

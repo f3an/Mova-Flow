@@ -69,12 +69,20 @@ interface WhisperApi {
   get_update_state(): Promise<UpdateState>;
   install_update(): Promise<void>;
   open_releases_page(): Promise<void>;
+  discover_hosts(): Promise<{ hosts: DiscoveredHost[] }>;
 }
 
 interface UpdateState {
   stage: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error';
   version: string | null;
   error: string | null;
+}
+
+interface DiscoveredHost {
+  name: string;
+  host: string;
+  addresses: string[];
+  port: number;
 }
 
 declare global {
@@ -736,6 +744,8 @@ const clientSecretInput = document.getElementById('clientSecretInput') as HTMLIn
 const clientSaveBtn = document.getElementById('clientSaveBtn') as HTMLButtonElement;
 const clientCheckBtn = document.getElementById('clientCheckBtn') as HTMLButtonElement;
 const clientCheckResult = document.getElementById('clientCheckResult') as HTMLDivElement;
+const scanNetworkBtn = document.getElementById('scanNetworkBtn') as HTMLButtonElement;
+const scanResults = document.getElementById('scanResults') as HTMLDivElement;
 const hostSecretInput = document.getElementById('hostSecretInput') as HTMLInputElement;
 const copySecretBtn = document.getElementById('copySecretBtn') as HTMLButtonElement;
 const regenSecretBtn = document.getElementById('regenSecretBtn') as HTMLButtonElement;
@@ -884,6 +894,50 @@ clientCheckBtn.addEventListener('click', async () => {
   }
 });
 
+function hostInitial(name: string): string {
+  return (name.trim()[0] || '?').toUpperCase();
+}
+
+scanNetworkBtn.addEventListener('click', async () => {
+  scanNetworkBtn.disabled = true;
+  scanNetworkBtn.textContent = t('client.scanning', 'Scanning...');
+  scanResults.hidden = true;
+
+  const { hosts } = await window.api.discover_hosts();
+
+  scanNetworkBtn.disabled = false;
+  scanNetworkBtn.textContent = '⟲ ' + t('client.scan', 'Scan network');
+
+  if (hosts.length === 0) {
+    scanResults.hidden = false;
+    scanResults.innerHTML = `<div class="secret-hint" style="margin:0;">${t('client.scan.empty', 'Nothing found — enter the host manually below.')}</div>`;
+    return;
+  }
+
+  scanResults.hidden = false;
+  scanResults.innerHTML = hosts
+    .map((h, i) => {
+      const address = h.addresses[0] || h.host;
+      return `
+        <button type="button" class="host-card" data-index="${i}">
+          <span class="host-icon">${escapeHtml(hostInitial(h.name))}</span>
+          <span class="host-name">${escapeHtml(h.name)}</span>
+          <span class="host-addr">${escapeHtml(address)}</span>
+        </button>
+      `;
+    })
+    .join('');
+
+  scanResults.querySelectorAll<HTMLButtonElement>('.host-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      const host = hosts[Number(card.dataset.index)];
+      clientHostInput.value = host.addresses[0] || host.host;
+      clientPortInput.value = String(host.port);
+      clientCheckResult.textContent = '';
+    });
+  });
+});
+
 copySecretBtn.addEventListener('click', () => {
   navigator.clipboard.writeText(hostSecretInput.value).then(() => {
     const original = copySecretBtn.textContent;
@@ -958,6 +1012,9 @@ function applyStaticTranslations(lang: Lang): void {
   set('clientSecretLabel', 'client.secret.label', 'Secret key (from the Server tab on the host machine)');
   set('clientSaveBtn', 'client.save', 'Save');
   set('clientCheckBtn', 'client.check', 'Test connection');
+  const scanBtnEl = document.getElementById('scanNetworkBtn');
+  if (scanBtnEl) scanBtnEl.textContent = '⟲ ' + t('client.scan', 'Scan network');
+  set('scanHint', 'client.scan.hint', 'Finds hosts with "Expose to local network" turned on.');
 
   const clientSecret = document.getElementById('clientSecretInput') as HTMLInputElement | null;
   if (clientSecret) clientSecret.placeholder = t('client.secret.placeholder', 'secret key');

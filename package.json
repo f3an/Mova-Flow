@@ -42,7 +42,9 @@
       "artifactName": "Mova-Flow-Setup-${version}.${ext}"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "build/icon.icns",
       "category": "public.app-category.productivity"
     },
@@ -64,6 +66,7 @@
     "electron-winstaller@5.4.0": true
   },
   "dependencies": {
+    "bonjour-service": "^1.4.4",
     "electron-updater": "^6.8.9",
     "express": "^5.2.1",
     "multer": "^2.4.0"

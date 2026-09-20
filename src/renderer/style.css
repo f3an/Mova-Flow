@@ -611,6 +611,74 @@ button.action.danger {
   color: #6b6858;
 }
 
+.scan-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.scan-row .secret-hint {
+  margin: 0;
+}
+
+.scan-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 16px;
+  background: #faf9f4;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+}
+
+.host-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 84px;
+  padding: 10px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: none;
+  font-family: var(--serif);
+  text-align: center;
+}
+
+.host-card:hover {
+  background: #eef2ef;
+  border-color: var(--line);
+}
+
+.host-card .host-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--moss);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.host-card .host-name {
+  font-size: 12px;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.host-card .host-addr {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #8a8672;
+}
+
 .field-row {
   display: flex;
   gap: 12px;

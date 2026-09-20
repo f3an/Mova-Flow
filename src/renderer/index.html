@@ -142,6 +142,12 @@
         </div>
 
         <div id="clientSection">
+          <div class="scan-row">
+            <button class="action secondary" id="scanNetworkBtn">⟲ Scan network</button>
+            <span class="secret-hint" id="scanHint">Finds hosts with "Expose to local network" turned on.</span>
+          </div>
+          <div id="scanResults" class="scan-results" hidden></div>
+
           <div class="field-row">
             <div>
               <label for="clientHostInput" id="clientHostLabel">Server IP address</label>
