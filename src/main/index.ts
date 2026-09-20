@@ -182,6 +182,11 @@ function createTray(): void {
     Menu.buildFromTemplate([
       { label: 'Open Mova Flow', click: showMainWindow },
       { type: 'separator' },
+      {
+        label: 'Open DevTools',
+        click: () => mainWindow?.webContents.openDevTools({ mode: 'detach' }),
+      },
+      { type: 'separator' },
       { label: 'Exit', click: () => app.quit() },
     ]),
   );
@@ -226,6 +231,16 @@ function createWindow(): void {
     if (isQuitting) return;
     event.preventDefault();
     win.hide();
+  });
+  // No application menu (Menu.setApplicationMenu(null) below), so the usual
+  // menu-role DevTools shortcut doesn't exist either — this reinstates it by
+  // hand, plus the cross-platform F12, for exactly this kind of debugging.
+  win.webContents.on('before-input-event', (_event, input) => {
+    const isMacToggle = input.meta && input.alt && input.key.toLowerCase() === 'i';
+    const isWinToggle = input.control && input.shift && input.key.toLowerCase() === 'i';
+    if (input.key === 'F12' || isMacToggle || isWinToggle) {
+      win.webContents.toggleDevTools();
+    }
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }

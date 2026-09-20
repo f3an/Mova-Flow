@@ -4,3 +4,4 @@ release/
 _verify/
 *.log
 .playwright-mcp/
+.DS_Store
