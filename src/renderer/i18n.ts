@@ -90,6 +90,7 @@ const UK: Record<string, string> = {
   'client.checking': 'Перевіряю...',
   'client.saved': 'Збережено.',
   'client.unreachable': 'Сервер не відповідає.',
+  'client.unreachable.detail': 'Сервер не відповідає: {error}',
   'client.badSecret': "З'єднання є, але секретний ключ невірний.",
   'client.ok': "З'єднання успішне, авторизація пройшла.",
   'client.scan': 'Знайти в мережі',

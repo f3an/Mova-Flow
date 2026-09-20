@@ -338,19 +338,24 @@ ipcMain.handle('stop-server', async () => {
 ipcMain.handle(
   'check-remote',
   async (_evt: IpcMainInvokeEvent, host: string, port: number, secret: string) => {
+    // This fetch runs in the main process (Node/undici), not the renderer's
+    // Chromium network stack — a slower first connection here than in an
+    // actual browser tab to the same address is a real, observed pattern,
+    // not just theoretical, hence the generous timeout and the real error
+    // surfaced below instead of a blind "not responding".
     try {
-      const res = await fetch(`http://${host}:${port}/`, { signal: AbortSignal.timeout(3000) });
-      if (!res.ok) return { reachable: false, authOk: false };
+      const res = await fetch(`http://${host}:${port}/`, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) return { reachable: false, authOk: false, error: `HTTP ${res.status}` };
 
       const authRes = await fetch(`http://${host}:${port}/api/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ secret: secret || '' }),
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(8000),
       });
       return { reachable: true, authOk: authRes.ok };
-    } catch {
-      return { reachable: false, authOk: false };
+    } catch (err) {
+      return { reachable: false, authOk: false, error: (err as Error).message || String(err) };
     }
   },
 );

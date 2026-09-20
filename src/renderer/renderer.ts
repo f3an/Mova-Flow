@@ -50,7 +50,11 @@ interface WhisperApi {
   ): Promise<{ ok: boolean }>;
   start_server(): Promise<{ ok: boolean }>;
   stop_server(): Promise<{ ok: boolean }>;
-  check_remote(host: string, port: number, secret: string): Promise<{ reachable: boolean; authOk: boolean }>;
+  check_remote(
+    host: string,
+    port: number,
+    secret: string,
+  ): Promise<{ reachable: boolean; authOk: boolean; error?: string }>;
   regenerate_secret(): Promise<{ secret: string }>;
   get_token(): Promise<IssuedToken>;
   set_language(lang: Lang): Promise<{ ok: boolean }>;
@@ -886,7 +890,9 @@ clientCheckBtn.addEventListener('click', async () => {
     clientSecretInput.value,
   );
   if (!res.reachable) {
-    clientCheckResult.textContent = t('client.unreachable', 'Server not responding.');
+    clientCheckResult.textContent = res.error
+      ? t('client.unreachable.detail', 'Server not responding: {error}', { error: res.error })
+      : t('client.unreachable', 'Server not responding.');
   } else if (!res.authOk) {
     clientCheckResult.textContent = t('client.badSecret', 'Connection OK, but the secret key is wrong.');
   } else {
