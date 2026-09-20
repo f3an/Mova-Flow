@@ -742,6 +742,16 @@ button.action.danger {
   color: #6b6858;
 }
 
+.about-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
 .lan-url {
   margin-top: 12px;
   font-family: var(--mono);

@@ -41,4 +41,5 @@ contextBridge.exposeInMainWorld('api', {
   install_update: () => ipcRenderer.invoke('install-update'),
   open_releases_page: () => ipcRenderer.invoke('open-releases-page'),
   discover_hosts: () => ipcRenderer.invoke('discover-hosts'),
+  check_for_updates: () => ipcRenderer.invoke('check-for-updates'),
 });

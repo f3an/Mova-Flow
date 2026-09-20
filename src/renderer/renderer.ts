@@ -22,6 +22,7 @@ interface AppState {
   modelPreset: ModelPreset;
   modelPath: string;
   lanExpose: boolean;
+  appVersion: string;
 }
 
 interface IssuedToken {
@@ -74,6 +75,7 @@ interface WhisperApi {
   install_update(): Promise<void>;
   open_releases_page(): Promise<void>;
   discover_hosts(): Promise<{ hosts: DiscoveredHost[] }>;
+  check_for_updates(): Promise<UpdateState>;
 }
 
 interface UpdateState {
@@ -750,6 +752,8 @@ const clientCheckBtn = document.getElementById('clientCheckBtn') as HTMLButtonEl
 const clientCheckResult = document.getElementById('clientCheckResult') as HTMLDivElement;
 const scanNetworkBtn = document.getElementById('scanNetworkBtn') as HTMLButtonElement;
 const scanResults = document.getElementById('scanResults') as HTMLDivElement;
+const appVersionText = document.getElementById('appVersionText') as HTMLSpanElement;
+const checkUpdatesBtn = document.getElementById('checkUpdatesBtn') as HTMLButtonElement;
 const hostSecretInput = document.getElementById('hostSecretInput') as HTMLInputElement;
 const copySecretBtn = document.getElementById('copySecretBtn') as HTMLButtonElement;
 const regenSecretBtn = document.getElementById('regenSecretBtn') as HTMLButtonElement;
@@ -827,6 +831,12 @@ function renderServerState(state: AppState): void {
   }
 }
 
+let currentAppVersion = '';
+
+function showAppVersionText(): void {
+  appVersionText.textContent = t('about.version', 'Mova Flow v{version}', { version: currentAppVersion });
+}
+
 async function refreshServerTab(): Promise<void> {
   const state = await window.api.get_state();
   selectRole(uiRole || state.role);
@@ -838,9 +848,38 @@ async function refreshServerTab(): Promise<void> {
   modelSelect.value = state.modelPreset;
   setCustomModelPath(state.modelPath || '');
   lanExposeCheckbox.checked = state.lanExpose;
+  currentAppVersion = state.appVersion;
+  showAppVersionText();
   renderServerState(state);
   refreshTranscribeGate();
 }
+
+checkUpdatesBtn.addEventListener('click', async () => {
+  checkUpdatesBtn.disabled = true;
+  checkUpdatesBtn.textContent = t('about.checking', 'Checking...');
+
+  const result = await window.api.check_for_updates();
+
+  checkUpdatesBtn.disabled = false;
+  checkUpdatesBtn.textContent = t('about.checkUpdates', 'Check for updates');
+  await refreshUpdateBanner();
+
+  // 'available'/'downloaded' already show as the persistent top banner (see
+  // refreshUpdateBanner) — this only has to speak up for the two outcomes
+  // that banner stays silent about, and only briefly before reverting to
+  // the plain version string.
+  if (result.stage === 'not-available') {
+    appVersionText.textContent = t('about.upToDate', "You're up to date — v{version}", {
+      version: currentAppVersion,
+    });
+    setTimeout(showAppVersionText, 4000);
+  } else if (result.stage === 'error') {
+    appVersionText.textContent = t('about.checkFailed', "Couldn't check for updates: {error}", {
+      error: result.error || '',
+    });
+    setTimeout(showAppVersionText, 4000);
+  }
+});
 
 srvToggleBtn.addEventListener('click', async () => {
   const state = await window.api.get_state();
@@ -1018,6 +1057,7 @@ function applyStaticTranslations(lang: Lang): void {
   set('clientSecretLabel', 'client.secret.label', 'Secret key (from the Server tab on the host machine)');
   set('clientSaveBtn', 'client.save', 'Save');
   set('clientCheckBtn', 'client.check', 'Test connection');
+  set('checkUpdatesBtn', 'about.checkUpdates', 'Check for updates');
   const scanBtnEl = document.getElementById('scanNetworkBtn');
   if (scanBtnEl) scanBtnEl.textContent = '⟲ ' + t('client.scan', 'Scan network');
   set('scanHint', 'client.scan.hint', 'Finds hosts with "Expose to local network" turned on.');

@@ -95,6 +95,7 @@ Record IDs are 12-character hex strings (`randomUUID().replace(/-/g,'').slice(0,
 - **Windows/Linux**: downloads silently in the background; once ready, the renderer shows a banner (`get-update-state` IPC, polled every 30s) with a **Restart to update** button that calls `autoUpdater.quitAndInstall()`.
 - **macOS**: only checks, never downloads. Squirrel.Mac verifies a downloaded update's code signature against the running app's before applying it, and this build has neither a signature nor a certificate to make one with — attempting an install would just fail. The renderer instead shows a **Download** banner linking to the Releases page (`shell.openExternal`).
 - Skipped entirely when running unpacked (`app.isPackaged` is false) — `npm run dev` has no `app-update.yml` for `electron-updater` to read, since electron-builder only writes that file during actual packaging.
+- The Server tab's **Check for updates** button (bottom, next to the current version) triggers the same `autoUpdater.checkForUpdates()` on demand, rather than waiting for the startup check or the next 6-hour interval — useful right after a new release ships.
 
 The `build.publish` block in `package.json` is what makes electron-builder generate `app-update.yml`/`latest*.yml` in the first place; `npm run dist` still passes `--publish never` so electron-builder never uploads anything itself — that stays the job of `release.yml`'s own `softprops/action-gh-release` step.
 

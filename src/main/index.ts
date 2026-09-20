@@ -263,6 +263,7 @@ ipcMain.handle('get-state', () => {
     modelPreset: cfg.model_preset,
     modelPath: cfg.model_path,
     lanExpose: cfg.lan_expose,
+    appVersion: app.getVersion(),
   };
 });
 
@@ -407,6 +408,21 @@ ipcMain.handle('install-update', () => {
 
 ipcMain.handle('open-releases-page', () => {
   shell.openExternal('https://github.com/f3an/Mova-Flow/releases/latest');
+});
+
+ipcMain.handle('check-for-updates', async () => {
+  // electron-updater needs app-update.yml, which only exists in a packaged
+  // build (see initAutoUpdater) — calling it unpacked would just throw.
+  if (!app.isPackaged) return { ...updateState, stage: 'not-available' as UpdateStage };
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (err) {
+    setUpdateState({ stage: 'error', error: (err as Error).message });
+  }
+  // checkForUpdates()'s own event listeners (see initAutoUpdater) update
+  // updateState synchronously as part of the same call, so it's already
+  // fresh here — no need to wait for the renderer's next poll.
+  return updateState;
 });
 
 ipcMain.handle('discover-hosts', async () => ({ hosts: await discoverHosts() }));
