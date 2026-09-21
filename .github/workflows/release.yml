@@ -50,84 +50,20 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: "Sign 1/5: create keychain"
-        if: matrix.os == 'macos-latest'
-        timeout-minutes: 1
-        run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
-          echo "::add-mask::$KEYCHAIN_PASSWORD"
-          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
-          echo "before create-keychain"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          echo "before set-keychain-settings"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          echo "before unlock-keychain"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          echo "before default-keychain"
-          security default-keychain -s "$KEYCHAIN_PATH"
-          echo "done"
-
-      - name: "Sign 2/5: decode and import certificate"
-        if: matrix.os == 'macos-latest'
-        timeout-minutes: 1
-        env:
-          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
-          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
-        run: |
-          echo "before decode"
-          echo "$MAC_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-          echo "before security import"
-          security import "$RUNNER_TEMP/certificate.p12" -P "$MAC_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          echo "before list-keychain"
-          security list-keychain -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
-          echo "before pkcs12 -clcerts"
-          openssl pkcs12 -in "$RUNNER_TEMP/certificate.p12" -clcerts -nokeys -legacy -passin pass:"$MAC_CERTIFICATE_PASSWORD" -out "$RUNNER_TEMP/certificate.pem"
-          echo "done"
-
-      - name: "Sign 3/5: trust certificate"
-        if: matrix.os == 'macos-latest'
-        timeout-minutes: 1
-        run: |
-          # add-trusted-cert asks for the com.apple.trust-settings.admin
-          # right, which defaults to requiring interactive GUI approval —
-          # that prompt never comes on a headless runner, so the command
-          # hangs forever. Pre-authorize it non-interactively first.
-          sudo security authorizationdb write com.apple.trust-settings.admin allow
-          security add-trusted-cert -k "$KEYCHAIN_PATH" -r trustRoot "$RUNNER_TEMP/certificate.pem"
-          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/certificate.pem"
-          echo "done"
-
-      - name: "Sign 4/5: set-key-partition-list"
-        if: matrix.os == 'macos-latest'
-        timeout-minutes: 1
-        continue-on-error: true
-        run: |
-          echo "before set-key-partition-list"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          echo "done"
-
-      - name: "Sign 5/5: verify identity is visible"
-        if: matrix.os == 'macos-latest'
-        timeout-minutes: 1
-        run: |
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
-
       - name: Build installer
         run: npm run dist
         env:
-          # Windows has no code-signing certificate configured — build an
-          # unsigned installer rather than have electron-builder fail looking
-          # for one. macOS signs with the certificate imported above, using
-          # the stable identity (build.mac.identity) configured in
-          # package.json — see docs on why this identity must stay stable
-          # across releases (macOS ties Local Network permission to it).
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.os == 'windows-latest' && 'false' || '' }}
-
-      - name: Remove macOS signing keychain
-        if: always() && matrix.os == 'macos-latest'
-        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+          # No code-signing certificate configured in CI — our self-signed
+          # cert reliably hangs `security add-trusted-cert` on GitHub's
+          # macOS runners (com.apple.trust-settings.admin requires
+          # interactive approval that never comes; even pre-authorizing it
+          # via `security authorizationdb write` is denied, likely by SIP).
+          # Building unsigned here until a real Developer ID Application
+          # certificate is available (doesn't need add-trusted-cert at all,
+          # since it chains to Apple's already-trusted root). Local builds
+          # on the maintainer's machine still sign fine with the self-signed
+          # "Mova Flow" identity configured in package.json.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
