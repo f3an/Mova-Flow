@@ -47,10 +47,7 @@
       ],
       "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
-      "identity": "Mova Flow",
-      "gatekeeperAssess": false,
-      "hardenedRuntime": false,
-      "timestamp": "none",
+      "hardenedRuntime": true,
       "extendInfo": {
         "NSLocalNetworkUsageDescription": "Mova Flow connects to other Mova Flow hosts on your local network to send audio for transcription, and discovers them automatically via Bonjour.",
         "NSBonjourServices": [
