@@ -50,12 +50,37 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Import macOS signing certificate
+        if: matrix.os == 'macos-latest'
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
+          echo "$MAC_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$MAC_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
       - name: Build installer
         run: npm run dist
         env:
-          # No code-signing certificate configured — build unsigned installers
-          # rather than have electron-builder fail looking for one.
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          # Windows has no code-signing certificate configured — build an
+          # unsigned installer rather than have electron-builder fail looking
+          # for one. macOS signs with the certificate imported above, using
+          # the stable identity (build.mac.identity) configured in
+          # package.json — see docs on why this identity must stay stable
+          # across releases (macOS ties Local Network permission to it).
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.os == 'windows-latest' && 'false' || '' }}
+
+      - name: Remove macOS signing keychain
+        if: always() && matrix.os == 'macos-latest'
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
