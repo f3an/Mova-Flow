@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: #2c4235;
+    font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  body {
+    position: relative;
+    background:
+      radial-gradient(120vw 80vh at 15% -10%, rgba(255, 255, 255, 0.06), transparent 60%),
+      radial-gradient(100vw 70vh at 105% 110%, rgba(168, 83, 46, 0.14), transparent 55%),
+      #2c4235;
+  }
+
+  .wordmark {
+    position: absolute;
+    top: 8.5vh;
+    left: 0;
+    width: 100vw;
+    text-align: center;
+    font-size: 3.4vh;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #f3f1ea;
+  }
+  .wordmark span { color: #e0a583; }
+
+  .rule {
+    position: absolute;
+    top: 16.5vh;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 12vw;
+    height: 2px;
+    background: rgba(243, 241, 234, 0.35);
+  }
+
+  /* icon-drop zones sit at x=180/480 of a 660-wide window → 27.3%/72.7% */
+  .arrow {
+    position: absolute;
+    top: 42vh;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 15vw;
+    height: 6vh;
+  }
+  .arrow svg { width: 100%; height: 100%; display: block; }
+
+  .hint {
+    position: absolute;
+    bottom: 9vh;
+    left: 0;
+    width: 100vw;
+    text-align: center;
+    font-size: 1.7vh;
+    letter-spacing: 0.03em;
+    color: rgba(243, 241, 234, 0.75);
+  }
+</style>
+</head>
+<body>
+  <div class="wordmark">MOVA<span>FLOW</span></div>
+  <div class="rule"></div>
+  <div class="arrow">
+    <svg viewBox="0 0 200 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 40 H176" stroke="#f3f1ea" stroke-width="6" stroke-linecap="round"/>
+      <path d="M150 14 L190 40 L150 66" stroke="#f3f1ea" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </svg>
+  </div>
+  <div class="hint">Drag to Applications to install</div>
+</body>
+</html>
