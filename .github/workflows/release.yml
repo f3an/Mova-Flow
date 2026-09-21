@@ -65,7 +65,14 @@ jobs:
           security import "$RUNNER_TEMP/certificate.p12" -P "$MAC_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          rm -f "$RUNNER_TEMP/certificate.p12"
+          # The certificate is self-signed (not chained to a trusted CA), so
+          # `security find-identity -p codesigning` won't list it as valid —
+          # and electron-builder silently falls back to ad-hoc signing when
+          # it can't resolve `identity` to a valid one — unless we explicitly
+          # trust it as a root for this keychain.
+          openssl pkcs12 -in "$RUNNER_TEMP/certificate.p12" -clcerts -nokeys -legacy -passin pass:"$MAC_CERTIFICATE_PASSWORD" -out "$RUNNER_TEMP/certificate.pem"
+          security add-trusted-cert -k "$KEYCHAIN_PATH" -r trustRoot "$RUNNER_TEMP/certificate.pem"
+          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/certificate.pem"
 
       - name: Build installer
         run: npm run dist
