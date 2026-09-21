@@ -73,7 +73,6 @@ interface WhisperApi {
   delete_client_history_entry(id: string): Promise<{ ok: boolean }>;
   get_update_state(): Promise<UpdateState>;
   install_update(): Promise<void>;
-  open_releases_page(): Promise<void>;
   discover_hosts(): Promise<{ hosts: DiscoveredHost[] }>;
   check_for_updates(): Promise<UpdateState>;
 }
@@ -1081,10 +1080,9 @@ const updateBanner = document.getElementById('updateBanner') as HTMLDivElement;
 async function refreshUpdateBanner(): Promise<void> {
   const state = await window.api.get_update_state();
 
-  // 'available' only reaches here on macOS — Windows/Linux go straight from
-  // available to downloading without user-visible interruption (see
-  // initAutoUpdater() in main/index.ts), so there's nothing to show them
-  // until the update is actually ready to install.
+  // Update flows straight from 'available' to downloading without user-visible
+  // interruption on every platform (see initAutoUpdater() in main/index.ts),
+  // so there's nothing to show until the update is actually ready to install.
   if (state.stage === 'downloaded') {
     updateBanner.hidden = false;
     updateBanner.innerHTML = `
@@ -1092,13 +1090,6 @@ async function refreshUpdateBanner(): Promise<void> {
       <button class="action" id="updateInstallBtn">${t('update.restart', 'Restart to update')}</button>
     `;
     document.getElementById('updateInstallBtn')?.addEventListener('click', () => window.api.install_update());
-  } else if (state.stage === 'available' && window.platform === 'darwin') {
-    updateBanner.hidden = false;
-    updateBanner.innerHTML = `
-      <span>${t('update.available', 'Mova Flow {version} is available.', { version: state.version || '' })}</span>
-      <button class="action secondary" id="updateDownloadBtn">${t('update.download', 'Download')}</button>
-    `;
-    document.getElementById('updateDownloadBtn')?.addEventListener('click', () => window.api.open_releases_page());
   } else {
     updateBanner.hidden = true;
   }

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, IpcMainInvokeEvent, net, shell } from 'electron';
+import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, IpcMainInvokeEvent, net } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -143,11 +143,7 @@ function initAutoUpdater(): void {
 
   autoUpdater.on('update-available', (info) => {
     setUpdateState({ stage: 'available', version: info.version });
-    // Without a code-signing certificate, Squirrel.Mac's own signature check
-    // rejects the downloaded update — so on macOS this only ever gets as far
-    // as "available" and the renderer points the user at the Releases page
-    // instead of installing anything.
-    if (process.platform !== 'darwin') void autoUpdater.downloadUpdate();
+    void autoUpdater.downloadUpdate();
   });
 
   const check = () => void autoUpdater.checkForUpdates().catch(() => {});
@@ -422,10 +418,6 @@ ipcMain.handle('get-update-state', () => updateState);
 
 ipcMain.handle('install-update', () => {
   autoUpdater.quitAndInstall();
-});
-
-ipcMain.handle('open-releases-page', () => {
-  shell.openExternal('https://github.com/f3an/Mova-Flow/releases/latest');
 });
 
 ipcMain.handle('check-for-updates', async () => {
