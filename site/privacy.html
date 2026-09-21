@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Privacy Policy — Mova Flow</title>
+<meta name="description" content="Privacy policy for Mova Flow and the Mova Flow Meet Recorder Chrome extension — what data is handled, where it goes, and what it never does.">
+<style>
+  :root {
+    --ink: #1a1d1a;
+    --paper: #f3f1ea;
+    --paper-2: #faf6ee;
+    --line: #d8d4c6;
+    --moss: #3f5c4a;
+    --moss-dark: #2c4235;
+    --rust: #a8532e;
+    --muted: #6b6858;
+    --mono: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+    --serif: 'Iowan Old Style', 'Georgia', serif;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    line-height: 1.6;
+  }
+  a { color: var(--moss-dark); }
+
+  .topbar {
+    background: var(--moss-dark);
+    color: rgba(233, 231, 220, 0.9);
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.02em;
+  }
+  .topbar-brand { display: flex; align-items: center; gap: 10px; color: #f3f1ea; font-weight: 600; text-decoration: none; }
+  .topbar-links { display: flex; gap: 20px; }
+  .topbar-links a { color: rgba(233, 231, 220, 0.85); text-decoration: none; }
+  .topbar-links a:hover { color: #fff; text-decoration: underline; }
+
+  .wrap { max-width: 720px; margin: 0 auto; padding: 56px 20px 80px; }
+  h1 { font-size: clamp(28px, 5vw, 38px); margin: 0 0 6px; letter-spacing: -0.01em; }
+  .updated { font-family: var(--mono); font-size: 12.5px; color: var(--muted); margin: 0 0 40px; }
+  h2 { font-size: 19px; margin: 40px 0 10px; }
+  p { color: var(--ink); }
+  p.muted, li.muted { color: var(--muted); }
+  ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  code { font-family: var(--mono); font-size: 13px; background: var(--paper-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin: 24px 0;
+  }
+  footer {
+    padding: 40px 20px 56px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  footer a { color: var(--moss-dark); margin: 0 10px; text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <a class="topbar-brand" href="./">
+      <svg width="20" height="20" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mova Flow">
+        <rect x="2" y="2" width="60" height="60" rx="14" fill="#e9e7dc" />
+        <rect x="12.5" y="23" width="6" height="18" rx="3" fill="#2c4235" />
+        <rect x="23.5" y="16" width="6" height="32" rx="3" fill="#2c4235" />
+        <rect x="34.5" y="20" width="6" height="24" rx="3" fill="#2c4235" />
+        <rect x="45.5" y="26" width="6" height="12" rx="3" fill="#2c4235" />
+      </svg>
+      MOVA FLOW
+    </a>
+    <div class="topbar-links">
+      <a href="./#extension">Extension</a>
+      <a href="https://github.com/f3an/Mova-Flow">GitHub</a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: September 21, 2026 — applies to the Mova Flow desktop app and the Mova Flow Meet Recorder Chrome extension.</p>
+
+    <div class="card">
+      <p><strong>Short version:</strong> Mova Flow does not have a backend, an account system, or any analytics. Audio you record or upload is sent only to the Mova Flow host <em>you</em> configure, over your own local network. Nothing is sent to us or to any third party, because there is no "us" in the data path at all — the code runs entirely on your machines.</p>
+    </div>
+
+    <h2>What data is processed</h2>
+    <ul>
+      <li><strong>Audio</strong> — files you drop into the Upload tab, or a Google Meet call recorded by the extension (tab audio + your microphone, mixed into one track).</li>
+      <li><strong>Transcripts</strong> — the text Whisper produces from that audio, stored in the app's local History alongside the source audio.</li>
+      <li><strong>Connection settings</strong> — the host's IP/hostname, port, and access secret you enter to connect a client to a host, stored locally (Electron's <code>config.json</code> or <code>chrome.storage</code> for the extension).</li>
+    </ul>
+
+    <h2>Where it goes</h2>
+    <p>Audio and transcripts travel only between devices you control, over your own local network:</p>
+    <ul>
+      <li>The <strong>host</strong> (one machine with a GPU) runs Whisper locally via <code>whisper-cli.exe</code> — recognition never calls out to any external API.</li>
+      <li>A <strong>client</strong> (desktop app or the Meet Recorder extension) sends audio to the host you configured, authenticated with a shared secret exchanged for a short-lived bearer token. See <a href="https://github.com/f3an/Mova-Flow/blob/master/docs/ARCHITECTURE.md#security-model">the security model</a> for details.</li>
+      <li>If the extension can't reach your configured host (offline, wrong network, etc.), the recording is saved to your <strong>Downloads</strong> folder instead of being discarded — it still never leaves your machine.</li>
+    </ul>
+    <p>No audio, transcript, or setting is ever sent to Mova Flow's developer, to any analytics service, or to any third party. There are no ads, no trackers, and no telemetry.</p>
+
+    <h2>Chrome extension permissions</h2>
+    <p>Mova Flow Meet Recorder requests the following, each used only for the purpose below:</p>
+    <ul>
+      <li><code>tabCapture</code> / <code>offscreen</code> — capture the Meet tab's audio and mix it with your microphone into one recording.</li>
+      <li><code>storage</code> — remember your configured host address and secret, and in-progress recording status, locally in the browser.</li>
+      <li><code>activeTab</code> — identify the current Meet call's tab when you press Record.</li>
+      <li><code>downloads</code> — save the recording as a <code>.wav</code> file when your host can't be reached.</li>
+      <li><code>host_permissions</code> (the address you configure) — send the recording to your own Mova Flow host for transcription.</li>
+    </ul>
+
+    <h2>Data retention and deletion</h2>
+    <p>Audio and transcripts are stored only on the host and/or client devices you run Mova Flow on. Delete an entry from the History tab (or delete the underlying files/folder) to remove it — there is no remote copy to also delete, since none exists.</p>
+
+    <h2>Changes to this policy</h2>
+    <p class="muted">If this policy changes, the "Last updated" date above will change and the new version will be published at this same URL.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about this policy or the project: open an issue on <a href="https://github.com/f3an/Mova-Flow/issues">github.com/f3an/Mova-Flow</a>.</p>
+  </div>
+
+  <footer>
+    <a href="./">Home</a>
+    <a href="https://github.com/f3an/Mova-Flow">GitHub</a>
+    <a href="https://github.com/f3an/mova-flow-meet-recorder">Meet Recorder extension</a>
+  </footer>
+
+</body>
+</html>
