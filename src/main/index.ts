@@ -14,6 +14,7 @@ import {
   getClientHistoryAudio,
   getClientHistoryText,
 } from './clientHistory';
+import { startExtensionBridge } from './localBridge';
 
 type UiLang = 'en' | 'uk';
 
@@ -449,6 +450,7 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
   initAutoUpdater();
+  startExtensionBridge(app.getPath('userData'));
   // Only auto-start on a machine that has already been set up (config.json
   // exists) — a fresh install must not silently kick off a multi-GB model
   // download before the user has even seen the Server tab and chosen a role.
