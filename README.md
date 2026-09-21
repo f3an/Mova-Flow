@@ -16,6 +16,7 @@ A local audio transcription app built on [whisper.cpp](https://github.com/ggml-o
 - [Features](#features)
 - [How it's built](#how-its-built)
 - [Quick start](#quick-start)
+- [Browser extension](#browser-extension)
 - [Screenshots](#screenshots)
 - [Project structure](#project-structure)
 - [Development](#development)
@@ -53,6 +54,7 @@ Every tagged release is built automatically by [`.github/workflows/release.yml`]
 - **Runs quietly in the tray**: closing the window hides it instead of quitting, so the host keeps serving — right-click the tray icon (menu bar on macOS) → **Exit** to actually shut it down.
 - **Checks for updates on its own**: Windows/Linux download and install with one click; macOS (unsigned, so it can't self-install) just shows a banner linking to the latest release.
 - **Finds the host on the network for you**: a "Scan network" button on the client role uses mDNS to list available hosts — no need to type an IP, though you still can.
+- **Companion Chrome extension** for recording Google Meet calls straight into your Mova Flow host — see [Browser extension](#browser-extension).
 
 ## How it's built
 
@@ -84,6 +86,16 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture, including
 2. Enter the host's IP address and port (`5000` by default), paste in the secret key.
 3. Press **"Test connection"**, then **"Save"**.
 4. Go to the **"Upload"** tab and drop in an audio file.
+
+## Browser extension
+
+[**Mova Flow Meet Recorder**](https://github.com/f3an/mova-flow-meet-recorder) is a companion Chrome extension that records a Google Meet call — both sides of the conversation, not just what you hear — and sends it to your Mova Flow host for transcription over the same shared-secret/bearer-token flow the desktop app uses.
+
+- Adds a **Record** button right into Meet's own call-controls toolbar, or use the same button from the extension's popup.
+- Mixes the tab audio (everyone else) with your microphone, so the transcript covers the whole conversation.
+- If the host can't be reached, the recording is saved to Downloads as a `.wav` instead — upload it manually once the host is back.
+
+Not yet on the Chrome Web Store — for now, install it unpacked (`npm install && npm run build`, then `chrome://extensions` → Developer mode → Load unpacked). See the [extension's README](https://github.com/f3an/mova-flow-meet-recorder) for setup and troubleshooting, and the [privacy policy](https://f3an.github.io/Mova-Flow/privacy.html) for what data it handles.
 
 ## Screenshots
 
