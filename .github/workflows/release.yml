@@ -89,22 +89,13 @@ jobs:
       - name: "Sign 3/5: trust certificate"
         if: matrix.os == 'macos-latest'
         timeout-minutes: 1
-        continue-on-error: true
         run: |
-          echo "before add-trusted-cert (backgrounded, 20s budget)"
-          security add-trusted-cert -k "$KEYCHAIN_PATH" -r trustRoot "$RUNNER_TEMP/certificate.pem" &
-          TRUST_PID=$!
-          for i in $(seq 1 20); do
-            kill -0 $TRUST_PID 2>/dev/null || break
-            sleep 1
-          done
-          if kill -0 $TRUST_PID 2>/dev/null; then
-            echo "::warning::add-trusted-cert did not finish in 20s, killing it — checking below whether trust was already written to disk"
-            kill -9 $TRUST_PID 2>/dev/null || true
-          else
-            wait $TRUST_PID
-            echo "add-trusted-cert finished on its own"
-          fi
+          # add-trusted-cert asks for the com.apple.trust-settings.admin
+          # right, which defaults to requiring interactive GUI approval —
+          # that prompt never comes on a headless runner, so the command
+          # hangs forever. Pre-authorize it non-interactively first.
+          sudo security authorizationdb write com.apple.trust-settings.admin allow
+          security add-trusted-cert -k "$KEYCHAIN_PATH" -r trustRoot "$RUNNER_TEMP/certificate.pem"
           rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/certificate.pem"
           echo "done"
 
