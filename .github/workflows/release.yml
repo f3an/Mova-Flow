@@ -66,15 +66,33 @@ jobs:
           security default-keychain -s "$KEYCHAIN_PATH"
           security import "$RUNNER_TEMP/certificate.p12" -P "$MAC_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           # The certificate is self-signed (not chained to a trusted CA), so
           # `security find-identity -p codesigning` won't list it as valid —
           # and electron-builder silently falls back to ad-hoc signing when
           # it can't resolve `identity` to a valid one — unless we explicitly
-          # trust it as a root for this keychain.
+          # trust it as a root for this keychain. Do this *before*
+          # set-key-partition-list below, which has been observed to hang
+          # indefinitely on the runner when run against an untrusted
+          # self-signed identity.
           openssl pkcs12 -in "$RUNNER_TEMP/certificate.p12" -clcerts -nokeys -legacy -passin pass:"$MAC_CERTIFICATE_PASSWORD" -out "$RUNNER_TEMP/certificate.pem"
           security add-trusted-cert -k "$KEYCHAIN_PATH" -r trustRoot "$RUNNER_TEMP/certificate.pem"
           rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/certificate.pem"
+          # Guard with our own timeout (no `timeout`/`gtimeout` binary on the
+          # runner by default): this command has hung indefinitely here
+          # before, so give it 20s in the background and move on if it
+          # doesn't finish rather than blocking the whole job.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" &
+          PARTITION_PID=$!
+          for i in $(seq 1 20); do
+            kill -0 $PARTITION_PID 2>/dev/null || break
+            sleep 1
+          done
+          if kill -0 $PARTITION_PID 2>/dev/null; then
+            echo "::warning::set-key-partition-list did not finish in 20s, killing it and continuing without it"
+            kill -9 $PARTITION_PID 2>/dev/null || true
+          else
+            wait $PARTITION_PID
+          fi
 
       - name: Build installer
         run: npm run dist
