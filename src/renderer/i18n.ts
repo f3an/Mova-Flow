@@ -100,8 +100,6 @@ const UK: Record<string, string> = {
 
   'update.downloaded': 'Mova Flow {version} готова до встановлення.',
   'update.restart': 'Перезапустити й оновити',
-  'update.available': 'Доступна Mova Flow {version}.',
-  'update.download': 'Завантажити',
 
   'about.version': 'Mova Flow v{version}',
   'about.checkUpdates': 'Перевірити оновлення',
