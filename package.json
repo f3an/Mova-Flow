@@ -1,6 +1,6 @@
 {
   "name": "mova-flow",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Mova Flow — a local transcription app built on Electron + whisper.cpp, no Python required.",
   "main": "dist/main/index.js",
   "scripts": {
