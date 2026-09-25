@@ -101,10 +101,10 @@ The `build.publish` block in `package.json` is what makes electron-builder gener
 
 ## Platform constraints
 
-The **"Server (host)"** role is tied to Windows at the code level:
+The **"Server (host)"** role runs on Windows and macOS (Apple Silicon):
 
-- `whisper-cli.exe` is a precompiled whisper.cpp build for Windows only (CUDA or CPU variant, depending on `nvidia-smi`).
-- Archive extraction goes through `powershell.exe Expand-Archive`, deliberately, instead of the npm package `extract-zip`, which has an unpatched symlink vulnerability.
-- GPU detection goes through `nvidia-smi`, which ships with the NVIDIA driver, with no need for the CUDA Toolkit.
+- **Windows**: `whisper-cli.exe` is a precompiled whisper.cpp build fetched from the project's own GitHub releases — CUDA or CPU variant, depending on `nvidia-smi` (ships with the NVIDIA driver, no CUDA Toolkit needed). Archive extraction goes through `powershell.exe Expand-Archive`, deliberately, instead of the npm package `extract-zip`, which has an unpatched symlink vulnerability.
+- **macOS**: ggml-org/whisper.cpp doesn't publish a macOS binary in its own releases (only Windows zips and an Ubuntu tar.gz), so `.github/workflows/build-whisper-macos.yml` compiles `whisper-cli` from source on an Apple Silicon runner — a single static binary with Metal embedded — and publishes it as a release asset in this repo instead, at `whisper-cpp-macos-arm64-<tag>`. `engine.ts` downloads it the same way it downloads the Windows build. Archive extraction uses the `unzip` binary that ships with macOS. No discrete GPU is required — Metal (Apple Silicon's integrated GPU) accelerates it automatically.
+- Intel Macs and Linux aren't supported for the host role yet — `ensureEngine()` throws a clear error rather than silently falling back to something broken.
 
-The **"Client"** role is a plain UI with no dependency on any of that, so it runs on any OS Electron supports (verified with an `npm run dist` build on macOS, for UI development).
+The **"Client"** role is a plain UI with no dependency on any of that, so it runs on any OS Electron supports.

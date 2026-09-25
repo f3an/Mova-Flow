@@ -50,7 +50,7 @@ const UK: Record<string, string> = {
 
   'server.title': 'Сервер',
   'role.host.title': 'Сервер (host)',
-  'role.host.desc': 'Ця машина має GPU і обробляє транскрипцію.',
+  'role.host.desc': 'Ця машина тримає модель і обробляє транскрипцію (GPU бажаний, але не обов\'язковий).',
   'role.client.title': 'Клієнт',
   'role.client.desc': 'Тільки інтерфейс, підключення до іншої машини в мережі.',
   'field.port': 'Порт',
