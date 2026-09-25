@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execFile, spawn } from 'child_process';
 import { downloadFile } from './download';
+import { downloadGhcrArtifact } from './ghcr';
 
 // Precompiled Windows builds of whisper.cpp are published under build tags
 // (b####), not version tags (v1.9.x) — the latter no longer ship binaries.
@@ -14,12 +15,14 @@ const CPU_ASSET = 'whisper-bin-x64.zip';
 // ggml-org/whisper.cpp does not publish a macOS binary in its releases (only
 // Windows zips and an Ubuntu tar.gz — checked across several recent build
 // tags). .github/workflows/build-whisper-macos.yml compiles one from source
-// on an Apple Silicon runner and publishes it as a release asset in this
-// repo instead — a single static binary with Metal embedded, so there's no
-// GPU/CPU split to choose between like on Windows.
+// on an Apple Silicon runner instead — a single static binary with Metal
+// embedded, so there's no GPU/CPU split to choose between like on Windows.
+// It's published to GitHub Packages (GHCR), not a GitHub Release: the
+// Releases page here is tag-only (app versions), and this artifact tracks an
+// upstream whisper.cpp build tag instead, on its own cadence.
 const MAC_ASSET = 'whisper-cpp-macos-arm64.zip';
-const macAssetUrl = (tag: string) =>
-  `https://github.com/f3an/Mova-Flow/releases/download/whisper-cpp-macos-arm64-${tag}/${MAC_ASSET}`;
+const GHCR_OWNER = 'f3an';
+const GHCR_PACKAGE = 'whisper-cli-macos-arm64';
 
 // Common ggml builds published under ggerganov/whisper.cpp on HuggingFace.
 export const MODEL_PRESETS = ['tiny', 'base', 'small', 'medium', 'large-v3', 'large-v3-turbo'] as const;
@@ -97,25 +100,23 @@ export async function ensureEngine(userDataDir: string, model: ModelChoice, onPr
       throw new Error(`The server (host) role isn't supported on ${process.platform} yet — only Windows and macOS.`);
     }
 
-    let url: string;
-    let asset: string;
-    let label: string;
+    const onDownloadProgress = (received: number, total: number) => {
+      if (total > 0) onProgress(`Downloading recognition engine... ${Math.round((received / total) * 100)}%`);
+    };
+
+    let zipPath: string;
     if (process.platform === 'darwin') {
-      asset = MAC_ASSET;
-      url = macAssetUrl(WHISPER_CPP_TAG);
-      label = 'Apple Silicon, Metal-accelerated';
+      zipPath = path.join(eDir, MAC_ASSET);
+      onProgress('Downloading recognition engine (Apple Silicon, Metal-accelerated)...');
+      await downloadGhcrArtifact(GHCR_OWNER, GHCR_PACKAGE, WHISPER_CPP_TAG, zipPath, onDownloadProgress);
     } else {
       const hasGpu = await detectGpu();
-      asset = hasGpu ? CUDA_ASSET : CPU_ASSET;
-      url = `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_TAG}/${asset}`;
-      label = hasGpu ? 'GPU' : 'CPU';
+      const winAsset = hasGpu ? CUDA_ASSET : CPU_ASSET;
+      zipPath = path.join(eDir, winAsset);
+      const url = `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_TAG}/${winAsset}`;
+      onProgress(`Downloading recognition engine (${hasGpu ? 'GPU' : 'CPU'})...`);
+      await downloadFile(url, zipPath, onDownloadProgress);
     }
-    const zipPath = path.join(eDir, asset);
-
-    onProgress(`Downloading recognition engine (${label})...`);
-    await downloadFile(url, zipPath, (received, total) => {
-      if (total > 0) onProgress(`Downloading recognition engine... ${Math.round((received / total) * 100)}%`);
-    });
 
     onProgress('Extracting recognition engine...');
     fs.mkdirSync(binDir(userDataDir), { recursive: true });
