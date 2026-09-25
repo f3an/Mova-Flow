@@ -40,7 +40,7 @@ Every tagged release is built automatically by [`.github/workflows/release.yml`]
 
 ## Features
 
-- **Local speech recognition** via `whisper-cli.exe` (whisper.cpp) — no audio data ever leaves your network.
+- **Local speech recognition** via `whisper-cli` (whisper.cpp) — no audio data ever leaves your network.
 - **Server / client roles**: one machine (usually with a GPU) holds the model and does the transcription; other devices connect to it over the network as thin clients.
 - **Automatic engine setup**: downloads the right whisper.cpp build on first run — on Windows it checks for an NVIDIA GPU via `nvidia-smi` and picks CUDA or CPU accordingly; on Apple Silicon it uses a Metal-accelerated build.
 - **Whisper model choice**: anything from `tiny` (~75 MB) to `large-v3` (~3 GB), or your own `.bin` file.
@@ -57,17 +57,69 @@ Every tagged release is built automatically by [`.github/workflows/release.yml`]
 
 An Electron app with the usual three layers (renderer ↔ preload ↔ main) plus a built-in HTTP API (Express) so clients can talk to the host over the network:
 
-![Mova Flow process architecture](docs/diagrams/architecture.svg)
+```mermaid
+flowchart TB
+    subgraph UI["Renderer process (Chromium, sandboxed)"]
+        R["index.html + renderer.ts<br/>Upload / History / Server tabs · i18n.ts"]
+    end
+
+    subgraph PL["Preload"]
+        P["preload/index.ts<br/>contextBridge.exposeInMainWorld('api', …)"]
+    end
+
+    subgraph MAIN["Main process (Node.js) — main/index.ts"]
+        C["Config<br/>readConfig() / writeConfig()<br/>role, port, auth_secret, model, lan_expose"]
+        H["HTTP API<br/>server.ts — Express + ServerController<br/>/api/auth /api/transcribe /api/status /api/history…"]
+        E["Recognition engine<br/>engine.ts<br/>ensureEngine() downloads whisper-cli + ggml model<br/>transcribe() spawns the CLI"]
+    end
+
+    FS["userData directory<br/>config.json · history.json<br/>engine/ (CLI + model .bin)<br/>uploads/ · transcripts/ · audio/"]
+    NET["Network<br/>this machine's own Upload tab (loopback) +<br/>other LAN devices, if exposed"]
+    CLI["whisper-cli<br/>child process (whisper.cpp)<br/>reads the ggml-*.bin model<br/>prints timestamped segments"]
+
+    R <-->|"window.api.*() → ipcRenderer.invoke(channel, …)"| P
+    P <-->|"ipcMain.handle(channel, …)"| MAIN
+    H -->|calls| E
+    C <--> FS
+    H -->|"serves :{port}"| NET
+    E -->|"spawn(-m,-f,-l)"| CLI
+    CLI -->|"stdout: segments"| E
+```
 
 The host and a client exchange data over a small REST API, protected by a shared secret and a short-lived token:
 
-![Authentication and transcription sequence](docs/diagrams/network-flow.svg)
+```mermaid
+sequenceDiagram
+    participant Client as Client machine<br/>(role: client — UI only)
+    participant Host as Host machine<br/>(role: host — server.ts on :5000)
+
+    Client->>Host: ① POST /api/auth { secret }
+    Note over Client,Host: secret copied once from the host's Server tab → Access secret key
+    Host-->>Client: ② 200 { token, expiresAt }
+    Note over Host,Client: HS256 token, timingSafeEqual check, 12h TTL
+
+    Client->>Host: ③ POST /api/transcribe<br/>Authorization: Bearer &lt;token&gt;, multipart audio file
+    activate Host
+    Note right of Host: ④ rateLimiter → requireAuth → multer<br/>saves to uploads/, then spawns whisper-cli
+    Host-->>Client: ⑤ 200 { job_id }
+    deactivate Host
+
+    loop every 1.5s until status is "done" or "error"
+        Client->>Host: ⑥ GET /api/status/:job_id
+        Host-->>Client: { status } → … → { status: "done", result }
+    end
+
+    Client->>Host: ⑦ GET /api/download/:job_id
+    Host-->>Client: ⑧ 200 transcript_&lt;id&gt;.txt
+
+    Note over Host: requireLocal — /api/history*<br/>any request whose IP isn't 127.0.0.1 gets 403,<br/>even with a valid token
+```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture, including the complete file pipeline from drop to saved transcript.
 
 ## Quick start
 
-> The **server** role (recognition) only runs on **Windows** — `engine.ts` relies on `whisper-cli.exe`, PowerShell's `Expand-Archive`, and `nvidia-smi`. The **client** role is UI-only, so it runs on any OS Electron supports.
+> The **server (host)** role runs on **Windows** and **Apple Silicon macOS** — see [Platform constraints](docs/ARCHITECTURE.md#platform-constraints) for how each fetches its `whisper-cli` build. The **client** role is UI-only, so it runs on any OS Electron supports.
 
 ### Server (the machine with a GPU, or a strong CPU)
 
@@ -111,7 +163,7 @@ src/
   main/
     index.ts          Electron window, config.json, every ipcMain.handle
     server.ts          Express server: /api/*, ServerController (start/stop)
-    engine.ts          downloads whisper.cpp + the model, spawns whisper-cli.exe
+    engine.ts          downloads whisper.cpp + the model, spawns whisper-cli
     auth.ts             secret, HS256 tokens, timing-safe comparison
     clientHistory.ts   the client's own local history (separate from the host's)
     download.ts         HTTPS file download, following redirects by hand
@@ -121,9 +173,8 @@ src/
   renderer/
     index.html, style.css, renderer.ts, i18n.ts   the UI (3 tabs)
 docs/
-  ARCHITECTURE.md         in-depth technical write-up
+  ARCHITECTURE.md         in-depth technical write-up (diagrams are inline Mermaid)
   API.md                  HTTP API reference
-  diagrams/                architecture diagrams (SVG)
   screenshots/             UI screenshots
 ```
 
