@@ -3,10 +3,19 @@ name: Build whisper.cpp (macOS arm64)
 # Unlike Windows, ggml-org/whisper.cpp does not publish a precompiled macOS
 # binary in its releases (verified against several recent build tags — only
 # Windows zips and an Ubuntu tar.gz ship). This workflow builds whisper-cli
-# from source on an Apple Silicon runner and publishes it as a release asset
-# in *this* repo, so engine.ts can download it the same way it already does
-# for Windows. Run manually (workflow_dispatch) whenever WHISPER_CPP_TAG in
-# src/main/engine.ts is bumped.
+# from source on an Apple Silicon runner and publishes it to GitHub Packages
+# (GHCR) as a public OCI artifact — deliberately NOT a GitHub Release: this
+# repo's Releases page is tag-only (app versions), and this artifact tracks
+# an upstream whisper.cpp build tag on its own cadence, not ours. engine.ts
+# pulls it back via the anonymous OCI registry flow (see src/main/ghcr.ts).
+# Run manually (workflow_dispatch) whenever WHISPER_CPP_TAG in engine.ts is
+# bumped.
+#
+# One-time manual step after this runs for the very first time: GHCR
+# packages default to Private even when pushed from a public repo. Go to
+# https://github.com/users/f3an/packages/container/whisper-cli-macos-arm64/settings
+# and set visibility to Public — otherwise the anonymous pull token request
+# in ghcr.ts fails and no end user can download the binary.
 on:
   workflow_dispatch:
     inputs:
@@ -16,7 +25,7 @@ on:
         default: 'b5130'
 
 permissions:
-  contents: write
+  packages: write
 
 jobs:
   build:
@@ -53,15 +62,16 @@ jobs:
           chmod +x dist/bin/whisper-cli
           cd dist && zip -r ../whisper-cpp-macos-arm64.zip bin
 
-      - name: Publish as a release asset
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: whisper-cpp-macos-arm64-${{ inputs.whisper_tag }}
-          name: 'whisper.cpp ${{ inputs.whisper_tag }} — macOS arm64'
-          body: |
-            Prebuilt `whisper-cli` for Apple Silicon Macs, compiled from
-            [ggml-org/whisper.cpp@${{ inputs.whisper_tag }}](https://github.com/ggml-org/whisper.cpp/tree/${{ inputs.whisper_tag }}).
-            Static binary, Metal-accelerated, no external runtime dependencies.
-            Downloaded automatically by Mova Flow's host role on macOS — not
-            meant to be installed manually.
-          files: whisper-cpp-macos-arm64.zip
+      - name: Set up oras
+        uses: oras-project/setup-oras@v1
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Push as an OCI artifact to GitHub Packages
+        run: |
+          oras push ghcr.io/f3an/whisper-cli-macos-arm64:${{ inputs.whisper_tag }} \
+            --artifact-type application/vnd.mova-flow.whisper-cli.v1 \
+            --annotation "org.opencontainers.image.description=Prebuilt whisper-cli for Apple Silicon Macs, compiled from ggml-org/whisper.cpp@${{ inputs.whisper_tag }}. Static binary, Metal-accelerated. Downloaded automatically by Mova Flow's host role on macOS." \
+            --annotation "org.opencontainers.image.source=https://github.com/f3an/Mova-Flow" \
+            whisper-cpp-macos-arm64.zip:application/zip
