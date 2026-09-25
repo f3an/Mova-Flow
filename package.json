@@ -46,6 +46,7 @@
         "dmg",
         "zip"
       ],
+      "artifactName": "Mova-Flow-${version}-${arch}-mac.${ext}",
       "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
       "hardenedRuntime": true,
