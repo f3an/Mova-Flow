@@ -1031,7 +1031,7 @@ function applyStaticTranslations(lang: Lang): void {
   set('historyTitle', 'history.title', 'History');
   set('serverTitle', 'server.title', 'Server');
   set('roleHostTitle', 'role.host.title', 'Server (host)');
-  set('roleHostDesc', 'role.host.desc', 'This machine has a GPU and runs the transcription.');
+  set('roleHostDesc', 'role.host.desc', 'This machine holds the model and runs the transcription (GPU recommended, not required).');
   set('roleClientTitle', 'role.client.title', 'Client');
   set('roleClientDesc', 'role.client.desc', 'Interface only, connects to another machine on the network.');
   set('hostPortLabel', 'field.port', 'Port');

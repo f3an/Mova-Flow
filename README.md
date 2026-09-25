@@ -31,13 +31,10 @@ Grab the latest build from **[github.com/f3an/Mova-Flow/releases/latest](https:/
 | Platform | Asset | What you get |
 |---|---|---|
 | Windows | `Mova-Flow-Setup-<version>.exe` | Full app — server (host) and client roles |
-| macOS | `Mova-Flow-<version>.dmg` | Client role only — no local recognition, see [Platform constraints](docs/ARCHITECTURE.md#platform-constraints) |
+| macOS | `Mova-Flow-<version>.dmg` | Full app on Apple Silicon (server + client); Intel Macs get the client role only — see [Platform constraints](docs/ARCHITECTURE.md#platform-constraints) |
 | Any OS | Source code (`.zip`/`.tar.gz`, auto-attached by GitHub to every release) | Build it yourself, see [Development](#development) |
 
-Installers aren't code-signed, so:
-
-- **Windows** may show a SmartScreen warning — click "More info" → "Run anyway".
-- **macOS** will refuse to open the app at all ("is damaged and can't be opened") — this is Gatekeeper reacting to an unsigned app downloaded from a browser, not actual corruption. The `.dmg` includes an **"Install & Open.command"** file — double-click it and it installs to `/Applications`, clears the quarantine flag, and launches the app in one step. (The command-line equivalent, if you'd rather: `xattr -cr "/Applications/Mova Flow.app"`.)
+The macOS build is signed and notarized, so it opens normally. The Windows installer isn't code-signed yet, so it may show a SmartScreen warning — click "More info" → "Run anyway".
 
 Every tagged release is built automatically by [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
@@ -45,14 +42,14 @@ Every tagged release is built automatically by [`.github/workflows/release.yml`]
 
 - **Local speech recognition** via `whisper-cli.exe` (whisper.cpp) — no audio data ever leaves your network.
 - **Server / client roles**: one machine (usually with a GPU) holds the model and does the transcription; other devices connect to it over the network as thin clients.
-- **Automatic GPU detection**: checks for an NVIDIA GPU via `nvidia-smi`, then downloads the matching CUDA or CPU build of whisper.cpp automatically.
+- **Automatic engine setup**: downloads the right whisper.cpp build on first run — on Windows it checks for an NVIDIA GPU via `nvidia-smi` and picks CUDA or CPU accordingly; on Apple Silicon it uses a Metal-accelerated build.
 - **Whisper model choice**: anything from `tiny` (~75 MB) to `large-v3` (~3 GB), or your own `.bin` file.
 - **Format support**: `.mp3 .wav .ogg .flac` sent as-is; `.m4a` and `.mov` are converted to WAV right in the browser (Web Audio API), with no external binaries.
 - **Transcription history**: kept alongside the original audio on the host; kept separately and locally on the client, and never reaches the host at all (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#security-model)).
 - **Access protection**: a shared secret key plus short-lived bearer tokens (HS256, 12h TTL) on every API request.
 - **English and Ukrainian UI**, switchable on the fly.
 - **Runs quietly in the tray**: closing the window hides it instead of quitting, so the host keeps serving — right-click the tray icon (menu bar on macOS) → **Exit** to actually shut it down.
-- **Checks for updates on its own**: Windows/Linux download and install with one click; macOS (unsigned, so it can't self-install) just shows a banner linking to the latest release.
+- **Checks for updates on its own** and installs them with one click, on both Windows and macOS.
 - **Finds the host on the network for you**: a "Scan network" button on the client role uses mDNS to list available hosts — no need to type an IP, though you still can.
 - **Companion Chrome extension** for recording Google Meet calls straight into your Mova Flow host — see [Browser extension](#browser-extension).
 

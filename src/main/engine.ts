@@ -11,6 +11,16 @@ const WHISPER_CPP_TAG = 'b5130';
 const CUDA_ASSET = 'whisper-cublas-12.4.0-bin-x64.zip';
 const CPU_ASSET = 'whisper-bin-x64.zip';
 
+// ggml-org/whisper.cpp does not publish a macOS binary in its releases (only
+// Windows zips and an Ubuntu tar.gz — checked across several recent build
+// tags). .github/workflows/build-whisper-macos.yml compiles one from source
+// on an Apple Silicon runner and publishes it as a release asset in this
+// repo instead — a single static binary with Metal embedded, so there's no
+// GPU/CPU split to choose between like on Windows.
+const MAC_ASSET = 'whisper-cpp-macos-arm64.zip';
+const macAssetUrl = (tag: string) =>
+  `https://github.com/f3an/Mova-Flow/releases/download/whisper-cpp-macos-arm64-${tag}/${MAC_ASSET}`;
+
 // Common ggml builds published under ggerganov/whisper.cpp on HuggingFace.
 export const MODEL_PRESETS = ['tiny', 'base', 'small', 'medium', 'large-v3', 'large-v3-turbo'] as const;
 export type ModelPreset = (typeof MODEL_PRESETS)[number];
@@ -34,7 +44,12 @@ function binDir(userDataDir: string): string {
 }
 
 export function cliPath(userDataDir: string): string {
-  return path.join(binDir(userDataDir), 'Release', 'whisper-cli.exe');
+  // Windows' zip keeps the MSVC multi-config layout (bin/Release/*.exe);
+  // our own macOS build (see build-whisper-macos.yml) is a single-config
+  // CMake build, so the binary lands straight in bin/ with no extension.
+  return process.platform === 'darwin'
+    ? path.join(binDir(userDataDir), 'whisper-cli')
+    : path.join(binDir(userDataDir), 'Release', 'whisper-cli.exe');
 }
 
 export function modelPath(userDataDir: string, choice: ModelChoice): string {
@@ -51,18 +66,22 @@ export function detectGpu(): Promise<boolean> {
   });
 }
 
-/** Unzips via Windows' built-in Expand-Archive (PowerShell) — avoids an npm
- * dependency like extract-zip, which has an unpatched symlink vulnerability. */
+/** Unzips via each OS's own built-in tool — avoids an npm dependency like
+ * extract-zip, which has an unpatched symlink vulnerability. Windows uses
+ * PowerShell's Expand-Archive; macOS ships `unzip` out of the box. */
 function expandArchive(zipPath: string, destDir: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', 'Expand-Archive', '-Path', zipPath, '-DestinationPath', destDir, '-Force'],
-      (err, _stdout, stderr) => {
-        if (err) reject(new Error(stderr || err.message));
-        else resolve();
-      },
-    );
+    const [cmd, args] =
+      process.platform === 'darwin'
+        ? ['unzip', ['-o', zipPath, '-d', destDir]]
+        : [
+            'powershell.exe',
+            ['-NoProfile', '-NonInteractive', '-Command', 'Expand-Archive', '-Path', zipPath, '-DestinationPath', destDir, '-Force'],
+          ];
+    execFile(cmd as string, args as string[], (err, _stdout, stderr) => {
+      if (err) reject(new Error(stderr || err.message));
+      else resolve();
+    });
   });
 }
 
@@ -74,12 +93,26 @@ export async function ensureEngine(userDataDir: string, model: ModelChoice, onPr
   fs.mkdirSync(eDir, { recursive: true });
 
   if (!fs.existsSync(cliPath(userDataDir))) {
-    const hasGpu = await detectGpu();
-    const asset = hasGpu ? CUDA_ASSET : CPU_ASSET;
-    const url = `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_TAG}/${asset}`;
+    if (process.platform !== 'win32' && process.platform !== 'darwin') {
+      throw new Error(`The server (host) role isn't supported on ${process.platform} yet — only Windows and macOS.`);
+    }
+
+    let url: string;
+    let asset: string;
+    let label: string;
+    if (process.platform === 'darwin') {
+      asset = MAC_ASSET;
+      url = macAssetUrl(WHISPER_CPP_TAG);
+      label = 'Apple Silicon, Metal-accelerated';
+    } else {
+      const hasGpu = await detectGpu();
+      asset = hasGpu ? CUDA_ASSET : CPU_ASSET;
+      url = `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_TAG}/${asset}`;
+      label = hasGpu ? 'GPU' : 'CPU';
+    }
     const zipPath = path.join(eDir, asset);
 
-    onProgress(`Downloading recognition engine (${hasGpu ? 'GPU' : 'CPU'})...`);
+    onProgress(`Downloading recognition engine (${label})...`);
     await downloadFile(url, zipPath, (received, total) => {
       if (total > 0) onProgress(`Downloading recognition engine... ${Math.round((received / total) * 100)}%`);
     });
@@ -88,6 +121,8 @@ export async function ensureEngine(userDataDir: string, model: ModelChoice, onPr
     fs.mkdirSync(binDir(userDataDir), { recursive: true });
     await expandArchive(zipPath, binDir(userDataDir));
     fs.unlinkSync(zipPath);
+
+    if (process.platform === 'darwin') fs.chmodSync(cliPath(userDataDir), 0o755);
   }
 
   const mPath = modelPath(userDataDir, model);
