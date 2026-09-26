@@ -63,7 +63,7 @@ jobs:
           cd dist && zip -r ../whisper-cpp-macos-arm64.zip bin
 
       - name: Set up oras
-        uses: oras-project/setup-oras@v1
+        uses: oras-project/setup-oras@v2
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
