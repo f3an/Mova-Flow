@@ -1,10 +1,10 @@
 import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, IpcMainInvokeEvent, net } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as os from 'os';
 import { autoUpdater } from 'electron-updater';
 import { controller } from './server';
 import { startAdvertising, stopAdvertising, discoverHosts } from './discovery';
+import { lanIPv4 } from './lanAddress';
 import { ensureEngine, modelPath, DEFAULT_MODEL_PRESET, ModelChoice, ModelPreset } from './engine';
 import { generateSecret, issueToken } from './auth';
 import {
@@ -72,13 +72,7 @@ function writeConfig(cfg: Config): void {
 }
 
 function getLanIp(): string {
-  const ifaces = os.networkInterfaces();
-  for (const name of Object.keys(ifaces)) {
-    for (const iface of ifaces[name] || []) {
-      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
-    }
-  }
-  return '127.0.0.1';
+  return lanIPv4() || '127.0.0.1';
 }
 
 // Captured before anything below has a chance to write config.json (e.g. the
