@@ -5,9 +5,10 @@ import * as fs from 'fs';
 import type { Server } from 'http';
 import type { Socket } from 'net';
 import { randomUUID } from 'crypto';
-import { transcribe } from './engine';
+import { SpeakerLabels, transcribe } from './engine';
 import { issueToken, timingSafeEqualStr, verifyToken } from './auth';
 import { rateLimiter } from './rateLimit';
+import { parseSpeakerTimeline } from './speakerNames';
 
 // whisper-cli decodes audio via miniaudio, which only supports these formats
 // directly ("supported audio formats" in `whisper-cli --help`). Everything else
@@ -99,6 +100,7 @@ function runJob(
   outputDir: string,
   audioDir: string,
   isLocal: boolean,
+  speakers?: SpeakerLabels,
 ): void {
   const job = jobs.get(jobId)!;
   job.status = 'processing';
@@ -107,7 +109,7 @@ function runJob(
   transcribe(userDataDir, modelFilePath, filePath, language, (progress) => {
     const j = jobs.get(jobId);
     if (j) j.progress = progress;
-  })
+  }, speakers)
     .then((result) => {
       const ext = path.extname(originalname).toLowerCase();
 
@@ -254,8 +256,17 @@ export class ServerController {
       const language = (req.body.language as string) || 'auto';
       const jobId = randomUUID().replace(/-/g, '').slice(0, 12);
       const isLocal = isLoopback(req.ip || '');
+      // "me-others": a stereo recording with the user's own mic on the left
+      // channel and everyone else on the right (see mova-flow-meet-recorder).
+      // Hosts that predate this ignore the field and just transcribe the mix.
+      // `speaker_timeline` (optional): Meet caption turns that put names to
+      // the right channel — see speakerNames.ts.
+      const speakers: SpeakerLabels | undefined =
+        req.body.speakers === 'me-others'
+          ? { left: 'Me', right: 'Others', timeline: parseSpeakerTimeline(req.body.speaker_timeline) }
+          : undefined;
       jobs.set(jobId, { status: 'queued', progress: 'Queued...', filename: file.originalname });
-      runJob(jobId, file.path, file.originalname, language, userDataDir, modelFilePath, outputDir, audioDir, isLocal);
+      runJob(jobId, file.path, file.originalname, language, userDataDir, modelFilePath, outputDir, audioDir, isLocal, speakers);
 
       res.json({ job_id: jobId });
     });
