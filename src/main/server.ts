@@ -66,6 +66,27 @@ function isLoopback(ip: string): boolean {
   return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
 
+// Binding to 0.0.0.0 listens on every interface — including a public one, if
+// the machine has a routable address (no NAT, PPPoE, DMZ, port forward, global
+// IPv6). "LAN mode" must mean LAN, so anything outside private/link-local
+// ranges is dropped at the socket level before it reaches express.
+function isLanAddress(ip: string): boolean {
+  const addr = ip.toLowerCase().replace(/^::ffff:/, '');
+  if (isLoopback(addr)) return true;
+  const v4 = addr.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return (
+      a === 10 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254)
+    );
+  }
+  // IPv6: unique local fc00::/7 and link-local fe80::/10.
+  return /^f[cd]/.test(addr) || /^fe[89ab]/.test(addr);
+}
+
 const jobs = new Map<string, Job>();
 
 function runJob(
@@ -330,6 +351,10 @@ export class ServerController {
         resolve();
       });
       srv.on('connection', (socket: Socket) => {
+        if (!isLanAddress(socket.remoteAddress || '')) {
+          socket.destroy();
+          return;
+        }
         this.sockets.add(socket);
         socket.on('close', () => this.sockets.delete(socket));
       });
