@@ -50,8 +50,27 @@ body {
   padding-left: 78px;
 }
 
+.update-progress {
+  flex: 0 0 160px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(233, 231, 220, 0.2);
+  overflow: hidden;
+}
+
+.update-progress > span {
+  display: block;
+  height: 100%;
+  background: rgba(233, 231, 220, 0.9);
+  transition: width 0.2s ease;
+}
+
 .update-banner {
   flex: 0 0 auto;
+  /* Same height with or without a button, so the page doesn't jump while the
+     banner moves through available -> downloading -> downloaded. */
+  min-height: 56px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;

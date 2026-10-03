@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, IpcMainInvokeEvent, net } from 'electron';
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, IpcMainInvokeEvent, net } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { autoUpdater } from 'electron-updater';
@@ -33,6 +33,10 @@ interface Config {
   // still works (it always talks to the host over localhost), but no other
   // device on the network can reach it.
   lan_expose: boolean;
+  // true: new versions download in the background as soon as they're found,
+  // and the user is only asked to restart. false: the user is told a version
+  // is available and decides when to download it.
+  auto_update: boolean;
 }
 
 const DEFAULT_CONFIG: Config = {
@@ -45,6 +49,7 @@ const DEFAULT_CONFIG: Config = {
   model_preset: DEFAULT_MODEL_PRESET,
   model_path: '',
   lan_expose: false,
+  auto_update: false,
 };
 
 function modelChoiceFromConfig(cfg: Config): ModelChoice {
@@ -112,12 +117,47 @@ interface UpdateState {
   stage: UpdateStage;
   version: string | null;
   error: string | null;
+  /** Download progress, 0-100; only meaningful while stage is 'downloading'. */
+  percent: number;
 }
 
-let updateState: UpdateState = { stage: 'idle', version: null, error: null };
+let updateState: UpdateState = { stage: 'idle', version: null, error: null, percent: 0 };
 
+/** Pushed to the renderer on every change — download progress moves far too
+ * fast for the banner to keep polling for it. */
 function setUpdateState(patch: Partial<UpdateState>): void {
   updateState = { ...updateState, ...patch };
+  mainWindow?.webContents.send('update-state', updateState);
+}
+
+// One OS notification per version and per step ("available", then "ready"),
+// however many times the periodic check finds the same version again.
+const notifiedUpdates = new Set<string>();
+
+function notifyUpdate(kind: 'available' | 'downloaded', version: string): void {
+  const key = `${kind}:${version}`;
+  if (notifiedUpdates.has(key) || !Notification.isSupported()) return;
+  // Someone already looking at the window sees the banner — no need to ping.
+  if (mainWindow?.isVisible() && mainWindow.isFocused()) return;
+  notifiedUpdates.add(key);
+  const uk = readConfig().language === 'uk';
+  const body =
+    kind === 'available'
+      ? uk
+        ? `Доступна нова версія ${version}. Відкрий програму, щоб завантажити.`
+        : `Version ${version} is available. Open the app to download it.`
+      : uk
+        ? `Версія ${version} завантажена. Перезапусти програму, щоб оновитися.`
+        : `Version ${version} is downloaded. Restart the app to update.`;
+  const notification = new Notification({ title: 'Mova Flow', body });
+  notification.on('click', showMainWindow);
+  notification.show();
+}
+
+function downloadUpdate(): void {
+  if (updateState.stage === 'downloading' || updateState.stage === 'downloaded') return;
+  setUpdateState({ stage: 'downloading', percent: 0, error: null });
+  autoUpdater.downloadUpdate().catch((err: Error) => setUpdateState({ stage: 'error', error: err.message }));
 }
 
 /** electron-updater reads app-update.yml, which electron-builder only writes
@@ -126,18 +166,42 @@ function setUpdateState(patch: Partial<UpdateState>): void {
 function initAutoUpdater(): void {
   if (!app.isPackaged) return;
 
+  // Downloads are always started by downloadUpdate() below — either right
+  // away (auto_update on) or when the user clicks Download — never by
+  // electron-updater on its own.
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
 
-  autoUpdater.on('checking-for-update', () => setUpdateState({ stage: 'checking' }));
-  autoUpdater.on('update-not-available', () => setUpdateState({ stage: 'not-available' }));
-  autoUpdater.on('error', (err) => setUpdateState({ stage: 'error', error: err.message }));
-  autoUpdater.on('download-progress', () => setUpdateState({ stage: 'downloading' }));
-  autoUpdater.on('update-downloaded', (info) => setUpdateState({ stage: 'downloaded', version: info.version }));
+  // A periodic re-check must not knock a download in progress, or one that's
+  // finished and waiting for a restart, back to "checking"/"available".
+  const busy = () => updateState.stage === 'downloading' || updateState.stage === 'downloaded';
+
+  autoUpdater.on('checking-for-update', () => {
+    if (!busy()) setUpdateState({ stage: 'checking' });
+  });
+  autoUpdater.on('update-not-available', () => {
+    if (!busy()) setUpdateState({ stage: 'not-available' });
+  });
+  autoUpdater.on('error', (err) => {
+    // A failed background re-check is irrelevant once an update is ready.
+    if (updateState.stage !== 'downloaded') setUpdateState({ stage: 'error', error: err.message });
+  });
+  autoUpdater.on('download-progress', (progress) =>
+    setUpdateState({ stage: 'downloading', percent: Math.round(progress.percent) }),
+  );
+  autoUpdater.on('update-downloaded', (info) => {
+    setUpdateState({ stage: 'downloaded', version: info.version, percent: 100 });
+    notifyUpdate('downloaded', info.version);
+  });
 
   autoUpdater.on('update-available', (info) => {
-    setUpdateState({ stage: 'available', version: info.version });
-    void autoUpdater.downloadUpdate();
+    if (busy()) return;
+    setUpdateState({ stage: 'available', version: info.version, error: null });
+    if (readConfig().auto_update) {
+      downloadUpdate();
+    } else {
+      notifyUpdate('available', info.version);
+    }
   });
 
   const check = () => void autoUpdater.checkForUpdates().catch(() => {});
@@ -270,6 +334,7 @@ ipcMain.handle('get-state', () => {
     modelPreset: cfg.model_preset,
     modelPath: cfg.model_path,
     lanExpose: cfg.lan_expose,
+    autoUpdate: cfg.auto_update,
     appVersion: app.getVersion(),
   };
 });
@@ -410,6 +475,17 @@ ipcMain.handle('delete-client-history-entry', (_evt: IpcMainInvokeEvent, id: str
 }));
 
 ipcMain.handle('get-update-state', () => updateState);
+
+ipcMain.handle('download-update', () => {
+  if (updateState.stage === 'available' || (updateState.stage === 'error' && updateState.version)) downloadUpdate();
+});
+
+ipcMain.handle('set-auto-update', (_evt: IpcMainInvokeEvent, enabled: boolean) => {
+  writeConfig({ ...readConfig(), auto_update: !!enabled });
+  // Switching it on with an update already found shouldn't wait for the next check.
+  if (enabled && updateState.stage === 'available') downloadUpdate();
+  return { ok: true };
+});
 
 ipcMain.handle('install-update', () => {
   // On macOS quitAndInstall() closes every window *before* 'before-quit'
