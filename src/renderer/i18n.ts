@@ -98,14 +98,22 @@ const UK: Record<string, string> = {
   'client.scan.empty': 'Нічого не знайдено — введи хост вручну нижче.',
   'client.scan.hint': 'Знаходить хости з увімкненим "Доступ з локальної мережі".',
 
+  'update.available': 'Доступна Mova Flow {version}.',
+  'update.download': 'Завантажити',
+  'update.downloading': 'Завантажую Mova Flow {version}... {percent}%',
   'update.downloaded': 'Mova Flow {version} готова до встановлення.',
   'update.restart': 'Перезапустити й оновити',
+  'update.downloadFailed': 'Не вдалося завантажити Mova Flow {version}: {error}',
+  'update.retry': 'Спробувати ще раз',
 
   'about.version': 'Mova Flow v{version}',
   'about.checkUpdates': 'Перевірити оновлення',
   'about.checking': 'Перевіряю...',
   'about.upToDate': 'Встановлена остання версія — v{version}',
   'about.checkFailed': 'Не вдалося перевірити оновлення: {error}',
+  'about.autoUpdate': 'Оновлювати автоматично',
+  'about.autoUpdate.hint':
+    'Завантажує нові версії у фоні й пропонує перезапуститися, коли все готово. Вимкнено — ти отримуєш повідомлення й сам вирішуєш, коли завантажувати.',
 };
 
 let currentLang: Lang = 'en';

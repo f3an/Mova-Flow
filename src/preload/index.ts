@@ -39,6 +39,11 @@ contextBridge.exposeInMainWorld('api', {
   delete_client_history_entry: (id: string) => ipcRenderer.invoke('delete-client-history-entry', id),
   get_update_state: () => ipcRenderer.invoke('get-update-state'),
   install_update: () => ipcRenderer.invoke('install-update'),
+  download_update: () => ipcRenderer.invoke('download-update'),
+  set_auto_update: (enabled: boolean) => ipcRenderer.invoke('set-auto-update', enabled),
+  on_update_state: (callback: (state: unknown) => void) => {
+    ipcRenderer.on('update-state', (_evt, state) => callback(state));
+  },
   discover_hosts: () => ipcRenderer.invoke('discover-hosts'),
   check_for_updates: () => ipcRenderer.invoke('check-for-updates'),
 });

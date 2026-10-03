@@ -22,6 +22,7 @@ interface AppState {
   modelPreset: ModelPreset;
   modelPath: string;
   lanExpose: boolean;
+  autoUpdate: boolean;
   appVersion: string;
 }
 
@@ -73,6 +74,9 @@ interface WhisperApi {
   delete_client_history_entry(id: string): Promise<{ ok: boolean }>;
   get_update_state(): Promise<UpdateState>;
   install_update(): Promise<void>;
+  download_update(): Promise<void>;
+  set_auto_update(enabled: boolean): Promise<{ ok: boolean }>;
+  on_update_state(callback: (state: UpdateState) => void): void;
   discover_hosts(): Promise<{ hosts: DiscoveredHost[] }>;
   check_for_updates(): Promise<UpdateState>;
 }
@@ -81,6 +85,7 @@ interface UpdateState {
   stage: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error';
   version: string | null;
   error: string | null;
+  percent: number;
 }
 
 interface DiscoveredHost {
@@ -753,6 +758,7 @@ const scanNetworkBtn = document.getElementById('scanNetworkBtn') as HTMLButtonEl
 const scanResults = document.getElementById('scanResults') as HTMLDivElement;
 const appVersionText = document.getElementById('appVersionText') as HTMLSpanElement;
 const checkUpdatesBtn = document.getElementById('checkUpdatesBtn') as HTMLButtonElement;
+const autoUpdateCheckbox = document.getElementById('autoUpdateCheckbox') as HTMLInputElement;
 const hostSecretInput = document.getElementById('hostSecretInput') as HTMLInputElement;
 const copySecretBtn = document.getElementById('copySecretBtn') as HTMLButtonElement;
 const regenSecretBtn = document.getElementById('regenSecretBtn') as HTMLButtonElement;
@@ -847,6 +853,7 @@ async function refreshServerTab(): Promise<void> {
   modelSelect.value = state.modelPreset;
   setCustomModelPath(state.modelPath || '');
   lanExposeCheckbox.checked = state.lanExpose;
+  autoUpdateCheckbox.checked = state.autoUpdate;
   currentAppVersion = state.appVersion;
   showAppVersionText();
   renderServerState(state);
@@ -861,10 +868,10 @@ checkUpdatesBtn.addEventListener('click', async () => {
 
   checkUpdatesBtn.disabled = false;
   checkUpdatesBtn.textContent = t('about.checkUpdates', 'Check for updates');
-  await refreshUpdateBanner();
+  renderUpdateBanner(result);
 
-  // 'available'/'downloaded' already show as the persistent top banner (see
-  // refreshUpdateBanner) — this only has to speak up for the two outcomes
+  // 'available'/'downloading'/'downloaded' already show as the persistent top
+  // banner (see renderUpdateBanner) — this only has to speak up for the outcomes
   // that banner stays silent about, and only briefly before reverting to
   // the plain version string.
   if (result.stage === 'not-available') {
@@ -872,7 +879,7 @@ checkUpdatesBtn.addEventListener('click', async () => {
       version: currentAppVersion,
     });
     setTimeout(showAppVersionText, 4000);
-  } else if (result.stage === 'error') {
+  } else if (result.stage === 'error' && !result.version) {
     appVersionText.textContent = t('about.checkFailed', "Couldn't check for updates: {error}", {
       error: result.error || '',
     });
@@ -1057,6 +1064,8 @@ function applyStaticTranslations(lang: Lang): void {
   set('clientSaveBtn', 'client.save', 'Save');
   set('clientCheckBtn', 'client.check', 'Test connection');
   set('checkUpdatesBtn', 'about.checkUpdates', 'Check for updates');
+  set('autoUpdateLabel', 'about.autoUpdate', 'Update automatically');
+  set('autoUpdateHint', 'about.autoUpdate.hint', 'Downloads new versions in the background and asks you to restart once ready. Off: you get a notice and choose when to download.');
   const scanBtnEl = document.getElementById('scanNetworkBtn');
   if (scanBtnEl) scanBtnEl.textContent = '⟲ ' + t('client.scan', 'Scan network');
   set('scanHint', 'client.scan.hint', 'Finds hosts with "Expose to local network" turned on.');
@@ -1077,23 +1086,49 @@ langSwitch.addEventListener('change', async () => {
 // ── Update banner ───────────────────────────────────────────────────────
 const updateBanner = document.getElementById('updateBanner') as HTMLDivElement;
 
-async function refreshUpdateBanner(): Promise<void> {
-  const state = await window.api.get_update_state();
-
-  // Update flows straight from 'available' to downloading without user-visible
-  // interruption on every platform (see initAutoUpdater() in main/index.ts),
-  // so there's nothing to show until the update is actually ready to install.
-  if (state.stage === 'downloaded') {
-    updateBanner.hidden = false;
-    updateBanner.innerHTML = `
-      <span>${t('update.downloaded', 'Mova Flow {version} is ready.', { version: state.version || '' })}</span>
-      <button class="action" id="updateInstallBtn">${t('update.restart', 'Restart to update')}</button>
+/** available → (Download) → downloading with progress → downloaded →
+ * (Restart). With auto-update on, main starts the download itself, so the
+ * banner goes straight to progress. A failed download keeps its version and
+ * offers a retry; a failed *check* (no version) stays out of the banner —
+ * the About row reports that one. */
+function renderUpdateBanner(state: UpdateState): void {
+  const version = escapeHtml(state.version || '');
+  let html = '';
+  if (state.stage === 'available') {
+    html = `
+      <span>${t('update.available', 'Mova Flow {version} is available.', { version })}</span>
+      <button class="action" data-update-action="download">${t('update.download', 'Download')}</button>
     `;
-    document.getElementById('updateInstallBtn')?.addEventListener('click', () => window.api.install_update());
-  } else {
-    updateBanner.hidden = true;
+  } else if (state.stage === 'downloading') {
+    const percent = Math.max(0, Math.min(100, state.percent || 0));
+    html = `
+      <span>${t('update.downloading', 'Downloading Mova Flow {version}... {percent}%', { version, percent: String(percent) })}</span>
+      <span class="update-progress"><span style="width: ${percent}%"></span></span>
+    `;
+  } else if (state.stage === 'downloaded') {
+    html = `
+      <span>${t('update.downloaded', 'Mova Flow {version} is ready.', { version })}</span>
+      <button class="action" data-update-action="install">${t('update.restart', 'Restart to update')}</button>
+    `;
+  } else if (state.stage === 'error' && state.version) {
+    html = `
+      <span>${t('update.downloadFailed', "Couldn't download Mova Flow {version}: {error}", { version, error: escapeHtml(state.error || '') })}</span>
+      <button class="action" data-update-action="download">${t('update.retry', 'Try again')}</button>
+    `;
   }
+  updateBanner.hidden = !html;
+  updateBanner.innerHTML = html;
 }
+
+updateBanner.addEventListener('click', (event) => {
+  const action = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-update-action]')?.dataset.updateAction;
+  if (action === 'download') void window.api.download_update();
+  if (action === 'install') void window.api.install_update();
+});
+
+autoUpdateCheckbox.addEventListener('change', () => {
+  void window.api.set_auto_update(autoUpdateCheckbox.checked);
+});
 
 async function init(): Promise<void> {
   const state = await window.api.get_state();
@@ -1104,8 +1139,8 @@ async function init(): Promise<void> {
   document.title = 'Mova Flow';
   showTab('transcribe');
   refreshServerTab();
-  refreshUpdateBanner();
-  setInterval(refreshUpdateBanner, 30_000);
+  renderUpdateBanner(await window.api.get_update_state());
+  window.api.on_update_state(renderUpdateBanner);
 }
 void tabbar; // tabbar is always visible in Electron, unlike the Python version
              // which hid it until window.pywebview appeared
