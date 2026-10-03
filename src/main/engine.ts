@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { execFile, spawn } from 'child_process';
 import { downloadFile } from './download';
 import { downloadGhcrArtifact } from './ghcr';
+import { SpeakerTurn, speakerAt } from './speakerNames';
 
 // Precompiled Windows builds of whisper.cpp are published under build tags
 // (b####), not version tags (v1.9.x) — the latter no longer ship binaries.
@@ -153,11 +154,37 @@ function formatTimestamp(totalSeconds: number): string {
   return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
-const SEGMENT_RE = /^\[(\d{2}):(\d{2}):(\d{2})\.\d{3}\s+-->\s+\d{2}:\d{2}:\d{2}\.\d{3}\]\s*(.*)$/;
+const SEGMENT_RE = /^\[(\d{2}):(\d{2}):(\d{2}\.\d{3})\s+-->\s+(\d{2}):(\d{2}):(\d{2}\.\d{3})\]\s*(.*)$/;
 // Not "lang = auto" from the "main: processing ..." line (that's just the -l flag
 // echoed back, not a result) — the actual detection result is on its own line
 // from whisper_full_with_state.
 const LANG_RE = /auto-detected language:\s*(\w+)/i;
+
+// With --diarize, whisper-cli prefixes each segment with the channel that was
+// louder while it was spoken: "(speaker 0)" = left, "(speaker 1)" = right,
+// "(speaker ?)" = neither clearly dominated (crosstalk, silence).
+const SPEAKER_RE = /^\(speaker ([01?])\)\s*/;
+
+/** Labels for a stereo recording whose two channels are two different sides
+ * of a conversation — the meet recorder puts the user's mic on the left and
+ * the call's audio on the right. */
+export interface SpeakerLabels {
+  left: string;
+  right: string;
+  /** Meet caption turns — names the right-channel speaker per segment
+   * instead of the generic `right` label wherever captions cover it. */
+  timeline?: SpeakerTurn[];
+}
+
+function speakerLabel(channel: string, start: number, end: number, speakers: SpeakerLabels): string | null {
+  // The mic channel is always the user, whatever the captions say.
+  if (channel === '0') return speakers.left;
+  // Crosstalk ("?") gets a name only if captions clearly place someone else
+  // there — otherwise it stays unlabeled rather than guessing a side.
+  const named = speakers.timeline?.length ? speakerAt(speakers.timeline, start, end) : null;
+  if (channel === '1') return named || speakers.right;
+  return named;
+}
 
 export interface TranscribeResult {
   text: string;
@@ -173,12 +200,16 @@ export function transcribe(
   filePath: string,
   language: string,
   onProgress: ProgressCb,
+  speakers?: SpeakerLabels,
 ): Promise<TranscribeResult> {
   return new Promise((resolve, reject) => {
     // whisper-cli defaults to 'en' when -l is omitted — it does NOT auto-detect
     // by default — so auto mode needs an explicit '-l auto' or everything gets
     // forced through as English.
     const args = ['-m', modelFilePath, '-f', filePath, '-l', language || 'auto'];
+    // A mono file passes through --diarize unharmed (every segment just comes
+    // back as "speaker ?"), so this needs no check on the file itself.
+    if (speakers) args.push('--diarize');
 
     const exe = cliPath(userDataDir);
     const child = spawn(exe, args, { cwd: path.dirname(exe) });
@@ -204,8 +235,16 @@ export function transcribe(
         buffer = buffer.slice(idx + 1);
         const m = SEGMENT_RE.exec(line);
         if (m) {
-          const [, hh, mm, ss, segText] = m;
-          const startSeconds = Number(hh) * 3600 + Number(mm) * 60 + Number(ss);
+          const [, sh, sm, ss, eh, em, es] = m;
+          let segText = m[7];
+          const startSeconds = Number(sh) * 3600 + Number(sm) * 60 + Number(ss);
+          const endSeconds = Number(eh) * 3600 + Number(em) * 60 + Number(es);
+          const speaker = SPEAKER_RE.exec(segText);
+          if (speaker && speakers) {
+            segText = segText.slice(speaker[0].length);
+            const label = speakerLabel(speaker[1], startSeconds, endSeconds, speakers);
+            if (label) segText = `${label}: ${segText}`;
+          }
           lines.push(`[${formatTimestamp(startSeconds)}] ${segText}`);
           segmentCount += 1;
           onProgress(`Processed segments: ${segmentCount}`);
