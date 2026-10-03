@@ -412,6 +412,11 @@ ipcMain.handle('delete-client-history-entry', (_evt: IpcMainInvokeEvent, id: str
 ipcMain.handle('get-update-state', () => updateState);
 
 ipcMain.handle('install-update', () => {
+  // On macOS quitAndInstall() closes every window *before* 'before-quit'
+  // fires, so the close handler in createWindow() would just hide the window
+  // to the tray and the app would never actually quit to install. Mark the
+  // quit as real up front.
+  isQuitting = true;
   autoUpdater.quitAndInstall();
 });
 
