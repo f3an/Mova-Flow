@@ -154,6 +154,7 @@ let isQuitting = false;
 
 function showMainWindow(): void {
   if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
   } else {
@@ -431,7 +432,21 @@ ipcMain.handle('check-for-updates', async () => {
 
 ipcMain.handle('discover-hosts', async () => ({ hosts: await discoverHosts() }));
 
+// The window hides to the tray instead of closing, so launching the app again
+// from a shortcut while it's "closed" would otherwise start a second copy —
+// with its own server fighting the first one for the port. Only the first
+// instance keeps running; any later launch just brings its window back.
+const isPrimaryInstance = app.requestSingleInstanceLock();
+if (!isPrimaryInstance) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (app.isReady()) showMainWindow();
+  });
+}
+
 app.whenReady().then(() => {
+  if (!isPrimaryInstance) return;
   Menu.setApplicationMenu(null);
   createWindow();
   createTray();
@@ -441,9 +456,10 @@ app.whenReady().then(() => {
   // exists) — a fresh install must not silently kick off a multi-GB model
   // download before the user has even seen the Server tab and chosen a role.
   if (hadConfigAtLaunch && readConfig().role === 'host') void startServer();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+  // macOS dock icon click — the window may only be hidden (see the close
+  // handler in createWindow), so bring it back rather than only handling
+  // the no-windows case.
+  app.on('activate', showMainWindow);
 });
 
 // Fires before any window's own 'close' event, on both a tray "Exit" click
