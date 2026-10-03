@@ -1139,8 +1139,14 @@ async function init(): Promise<void> {
   document.title = 'Mova Flow';
   showTab('transcribe');
   refreshServerTab();
-  renderUpdateBanner(await window.api.get_update_state());
+  // Subscribe before reading the current state: main starts checking for
+  // updates while this page is still loading, and a change landing between
+  // the read and the subscription would otherwise only show after a reload.
   window.api.on_update_state(renderUpdateBanner);
+  renderUpdateBanner(await window.api.get_update_state());
+  // Belt and braces for a window that sat hidden in the tray while the
+  // update moved on — re-read whenever it comes back to the front.
+  window.addEventListener('focus', () => void window.api.get_update_state().then(renderUpdateBanner));
 }
 void tabbar; // tabbar is always visible in Electron, unlike the Python version
              // which hid it until window.pywebview appeared
