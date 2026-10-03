@@ -50,6 +50,12 @@ body {
   padding-left: 78px;
 }
 
+/* The class's display: flex would otherwise beat the [hidden] attribute and
+   leave an empty bar on screen whenever there's no update to show. */
+.update-banner[hidden] {
+  display: none;
+}
+
 .update-progress {
   flex: 0 0 160px;
   height: 6px;
