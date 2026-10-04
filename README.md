@@ -141,7 +141,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture, including
 [**Mova Flow Meet Recorder**](https://chromewebstore.google.com/detail/kdeeohghjiengnkgfpjkakeajhnddfnh) is a companion Chrome extension that records a Google Meet call — both sides of the conversation, not just what you hear — and sends it to your Mova Flow host for transcription over the same shared-secret/bearer-token flow the desktop app uses.
 
 - Adds a **Record** button right into Meet's own call-controls toolbar, or use the same button from the extension's popup.
-- Mixes the tab audio (everyone else) with your microphone, so the transcript covers the whole conversation.
+- Records everyone else from the tab, and your own side from the audio Meet itself sends — no microphone permission needed, and silent while you're muted. The two sides stay on separate channels, so the transcript marks who said what (`Me:` / names from Meet's captions).
 - If the host can't be reached, the recording is saved to Downloads as a `.wav` instead — upload it manually once the host is back.
 
 **[Get it on the Chrome Web Store →](https://chromewebstore.google.com/detail/kdeeohghjiengnkgfpjkakeajhnddfnh)** — or build it yourself from [source](https://github.com/f3an/mova-flow-meet-recorder). See the [privacy policy](https://f3an.github.io/Mova-Flow/privacy.html) for what data it handles.
