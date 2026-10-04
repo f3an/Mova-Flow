@@ -43,6 +43,37 @@ function engineDir(userDataDir: string): string {
   return path.join(userDataDir, 'engine');
 }
 
+// Silero voice-activity model for whisper-cli --vad. Without it, Whisper
+// decodes silence too: a recording that opens with a minute of quiet gets
+// its language guessed from nothing (e.g. "nn" at p=0.52), hallucinates a
+// stock subtitle line ("Takk for at du så med."), and — conditioning on its
+// own previous text — repeats it over the real speech for the whole file.
+// With VAD only actual speech is decoded; timestamps still map back to the
+// original recording, and --diarize channel labels keep working.
+const VAD_MODEL_FILE = 'ggml-silero-v5.1.2.bin';
+const VAD_MODEL_URL = `https://huggingface.co/ggml-org/whisper-vad/resolve/main/${VAD_MODEL_FILE}`;
+
+function vadModelPath(userDataDir: string): string {
+  return path.join(engineDir(userDataDir), VAD_MODEL_FILE);
+}
+
+// Asked once per engine binary: an older whisper-cli without --vad would
+// reject the flag and fail the whole job, where skipping VAD only costs accuracy.
+const vadSupport = new Map<string, Promise<boolean>>();
+
+function cliSupportsVad(exe: string): Promise<boolean> {
+  let known = vadSupport.get(exe);
+  if (!known) {
+    known = new Promise((resolve) => {
+      execFile(exe, ['--help'], { cwd: path.dirname(exe), timeout: 10000 }, (_err, stdout, stderr) =>
+        resolve(/--vad\b/.test(`${stdout}${stderr}`)),
+      );
+    });
+    vadSupport.set(exe, known);
+  }
+  return known;
+}
+
 function binDir(userDataDir: string): string {
   return path.join(engineDir(userDataDir), 'bin');
 }
@@ -143,6 +174,18 @@ export async function ensureEngine(userDataDir: string, model: ModelChoice, onPr
       if (total > 0) onProgress(`Downloading model... ${Math.round((received / total) * 100)}%`);
     });
   }
+
+  // Also fetched on the next start for engines installed before VAD existed.
+  // Optional: if it can't be downloaded, transcription still runs without it.
+  const vPath = vadModelPath(userDataDir);
+  if (!fs.existsSync(vPath)) {
+    onProgress('Downloading voice-activity model...');
+    try {
+      await downloadFile(VAD_MODEL_URL, vPath, () => {});
+    } catch {
+      fs.rmSync(vPath, { force: true });
+    }
+  }
 }
 
 function formatTimestamp(totalSeconds: number): string {
@@ -202,7 +245,10 @@ export function transcribe(
   onProgress: ProgressCb,
   speakers?: SpeakerLabels,
 ): Promise<TranscribeResult> {
-  return new Promise((resolve, reject) => {
+  const exe = cliPath(userDataDir);
+  const vPath = vadModelPath(userDataDir);
+  const useVad = fs.existsSync(vPath) ? cliSupportsVad(exe) : Promise.resolve(false);
+  return useVad.then((vad) => new Promise((resolve, reject) => {
     // whisper-cli defaults to 'en' when -l is omitted — it does NOT auto-detect
     // by default — so auto mode needs an explicit '-l auto' or everything gets
     // forced through as English.
@@ -210,8 +256,8 @@ export function transcribe(
     // A mono file passes through --diarize unharmed (every segment just comes
     // back as "speaker ?"), so this needs no check on the file itself.
     if (speakers) args.push('--diarize');
+    if (vad) args.push('--vad', '-vm', vPath);
 
-    const exe = cliPath(userDataDir);
     const child = spawn(exe, args, { cwd: path.dirname(exe) });
 
     const lines: string[] = [];
@@ -269,5 +315,5 @@ export function transcribe(
       }
       resolve({ text: lines.join('\n'), detectedLanguage: detectedLanguage || 'auto' });
     });
-  });
+  }));
 }
