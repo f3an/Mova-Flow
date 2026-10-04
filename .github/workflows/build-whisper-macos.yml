@@ -23,6 +23,10 @@ on:
         description: 'whisper.cpp build tag to compile (must match WHISPER_CPP_TAG in engine.ts)'
         required: true
         default: 'b5130'
+      # f3an/whisper.cpp is a fork kept as a fallback source. GitHub forks
+      # don't carry tags, so after bumping WHISPER_CPP_TAG: "Sync fork" on
+      # GitHub, then tag the same commit there (git tag <tag> <sha> && git push
+      # origin refs/tags/<tag>) — b5130 is already tagged.
       whisper_repo:
         description: 'Source repository — point at a fork (e.g. f3an/whisper.cpp) if upstream is ever unavailable'
         required: true
