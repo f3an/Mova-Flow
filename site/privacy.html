@@ -102,7 +102,8 @@
 
     <h2>What data is processed</h2>
     <ul>
-      <li><strong>Audio</strong> — files you drop into the Upload tab, or a Google Meet call recorded by the extension (tab audio + your microphone, mixed into one track).</li>
+      <li><strong>Audio</strong> — files you drop into the Upload tab, or a Google Meet call recorded by the extension: the call's tab audio, plus your own side of the call taken from the audio Meet itself sends to the other participants. The extension never requests or opens your microphone.</li>
+      <li><strong>Speaker names</strong> — while recording, the extension reads the display names in Meet's live captions and when each person spoke, so the transcript can say who said what. These are sent only to your configured host along with the recording.</li>
       <li><strong>Transcripts</strong> — the text Whisper produces from that audio, stored in the app's local History alongside the source audio.</li>
       <li><strong>Connection settings</strong> — the host's IP/hostname, port, and access secret you enter to connect a client to a host, stored locally (Electron's <code>config.json</code> or <code>chrome.storage</code> for the extension).</li>
     </ul>
@@ -119,7 +120,8 @@
     <h2>Chrome extension permissions</h2>
     <p>Mova Flow Meet Recorder requests the following, each used only for the purpose below:</p>
     <ul>
-      <li><code>tabCapture</code> / <code>offscreen</code> — capture the Meet tab's audio and mix it with your microphone into one recording.</li>
+      <li><code>tabCapture</code> / <code>offscreen</code> — capture the Meet tab's audio (everyone else on the call) and combine it with your own side of the call into one recording.</li>
+      <li>Access to <code>meet.google.com</code> pages — add the Record button to Meet's toolbar, read speaker names from Meet's live captions, and record the audio Meet sends from you to the other participants (silent while you're muted). No microphone permission is requested.</li>
       <li><code>storage</code> — remember your configured host address and secret, and in-progress recording status, locally in the browser.</li>
       <li><code>activeTab</code> — identify the current Meet call's tab when you press Record.</li>
       <li><code>downloads</code> — save the recording as a <code>.wav</code> file when your host can't be reached.</li>
