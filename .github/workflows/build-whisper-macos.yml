@@ -23,6 +23,10 @@ on:
         description: 'whisper.cpp build tag to compile (must match WHISPER_CPP_TAG in engine.ts)'
         required: true
         default: 'b5130'
+      whisper_repo:
+        description: 'Source repository — point at a fork (e.g. f3an/whisper.cpp) if upstream is ever unavailable'
+        required: true
+        default: 'ggml-org/whisper.cpp'
 
 permissions:
   packages: write
@@ -36,7 +40,7 @@ jobs:
       - name: Checkout whisper.cpp
         uses: actions/checkout@v7
         with:
-          repository: ggml-org/whisper.cpp
+          repository: ${{ inputs.whisper_repo }}
           ref: ${{ inputs.whisper_tag }}
           path: whisper.cpp
 
@@ -72,6 +76,6 @@ jobs:
         run: |
           oras push ghcr.io/f3an/whisper-cli-macos-arm64:${{ inputs.whisper_tag }} \
             --artifact-type application/vnd.mova-flow.whisper-cli.v1 \
-            --annotation "org.opencontainers.image.description=Prebuilt whisper-cli for Apple Silicon Macs, compiled from ggml-org/whisper.cpp@${{ inputs.whisper_tag }}. Static binary, Metal-accelerated. Downloaded automatically by Mova Flow's host role on macOS." \
+            --annotation "org.opencontainers.image.description=Prebuilt whisper-cli for Apple Silicon Macs, compiled from ${{ inputs.whisper_repo }}@${{ inputs.whisper_tag }}. Static binary, Metal-accelerated. Downloaded automatically by Mova Flow's host role on macOS." \
             --annotation "org.opencontainers.image.source=https://github.com/f3an/Mova-Flow" \
             whisper-cpp-macos-arm64.zip:application/zip

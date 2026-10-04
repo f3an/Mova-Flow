@@ -1,4 +1,6 @@
 import * as https from 'https';
+import * as fs from 'fs';
+import { createHash } from 'crypto';
 import { downloadFile, DownloadProgressCb } from './download';
 
 interface OciManifest {
@@ -60,5 +62,23 @@ export async function downloadGhcrArtifact(
 
   await downloadFile(`https://ghcr.io/v2/${owner}/${pkg}/blobs/${layer.digest}`, destPath, onProgress, {
     Authorization: `Bearer ${token}`,
+  });
+
+  // The manifest names the blob by its sha256 — check the bytes actually
+  // match before anything (a binary, a model) gets used.
+  const actual = `sha256:${await sha256File(destPath)}`;
+  if (actual !== layer.digest) {
+    fs.rmSync(destPath, { force: true });
+    throw new Error(`GHCR download of ${owner}/${pkg}:${tag} is corrupted (got ${actual}, expected ${layer.digest})`);
+  }
+}
+
+function sha256File(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256');
+    fs.createReadStream(filePath)
+      .on('data', (chunk) => hash.update(chunk))
+      .on('error', reject)
+      .on('end', () => resolve(hash.digest('hex')));
   });
 }

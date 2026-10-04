@@ -24,6 +24,27 @@ const CPU_ASSET = 'whisper-bin-x64.zip';
 const MAC_ASSET = 'whisper-cpp-macos-arm64.zip';
 const GHCR_OWNER = 'f3an';
 const GHCR_PACKAGE = 'whisper-cli-macos-arm64';
+// Mirrors of everything else the engine downloads (Windows binaries, Whisper
+// and VAD models) — see mirror-engine-assets.yml. Tried first; the upstream
+// URLs are only a fallback, so the app keeps working if upstream files move
+// or disappear, and keeps working on upstream if the mirror is unreachable.
+const GHCR_WINDOWS_PACKAGE = 'whisper-cli-windows-x64';
+const GHCR_MODELS_PACKAGE = 'whisper-models';
+
+/** Tries each source in order, returning on the first that succeeds; the
+ * error that surfaces if they all fail is the last (upstream) one. */
+async function downloadFromAny(sources: (() => Promise<void>)[]): Promise<void> {
+  let lastError: unknown;
+  for (const source of sources) {
+    try {
+      await source();
+      return;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
 
 // Common ggml builds published under ggerganov/whisper.cpp on HuggingFace.
 export const MODEL_PRESETS = ['tiny', 'base', 'small', 'medium', 'large-v3', 'large-v3-turbo'] as const;
@@ -52,6 +73,7 @@ function engineDir(userDataDir: string): string {
 // original recording, and --diarize channel labels keep working.
 const VAD_MODEL_FILE = 'ggml-silero-v5.1.2.bin';
 const VAD_MODEL_URL = `https://huggingface.co/ggml-org/whisper-vad/resolve/main/${VAD_MODEL_FILE}`;
+const VAD_MIRROR_TAG = 'silero-v5.1.2';
 
 function vadModelPath(userDataDir: string): string {
   return path.join(engineDir(userDataDir), VAD_MODEL_FILE);
@@ -144,10 +166,15 @@ export async function ensureEngine(userDataDir: string, model: ModelChoice, onPr
     } else {
       const hasGpu = await detectGpu();
       const winAsset = hasGpu ? CUDA_ASSET : CPU_ASSET;
-      zipPath = path.join(eDir, winAsset);
+      const finalZipPath = path.join(eDir, winAsset);
+      zipPath = finalZipPath;
       const url = `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_TAG}/${winAsset}`;
+      const mirrorTag = `${WHISPER_CPP_TAG}-${hasGpu ? 'cuda' : 'cpu'}`;
       onProgress(`Downloading recognition engine (${hasGpu ? 'GPU' : 'CPU'})...`);
-      await downloadFile(url, zipPath, onDownloadProgress);
+      await downloadFromAny([
+        () => downloadGhcrArtifact(GHCR_OWNER, GHCR_WINDOWS_PACKAGE, mirrorTag, finalZipPath, onDownloadProgress),
+        () => downloadFile(url, finalZipPath, onDownloadProgress),
+      ]);
     }
 
     onProgress('Extracting recognition engine...');
@@ -170,9 +197,13 @@ export async function ensureEngine(userDataDir: string, model: ModelChoice, onPr
     const filename = `ggml-${model.preset}.bin`;
     const url = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${filename}`;
     onProgress(`Downloading model (${filename})...`);
-    await downloadFile(url, mPath, (received, total) => {
+    const onModelProgress = (received: number, total: number) => {
       if (total > 0) onProgress(`Downloading model... ${Math.round((received / total) * 100)}%`);
-    });
+    };
+    await downloadFromAny([
+      () => downloadGhcrArtifact(GHCR_OWNER, GHCR_MODELS_PACKAGE, model.preset, mPath, onModelProgress),
+      () => downloadFile(url, mPath, onModelProgress),
+    ]);
   }
 
   // Also fetched on the next start for engines installed before VAD existed.
@@ -181,7 +212,10 @@ export async function ensureEngine(userDataDir: string, model: ModelChoice, onPr
   if (!fs.existsSync(vPath)) {
     onProgress('Downloading voice-activity model...');
     try {
-      await downloadFile(VAD_MODEL_URL, vPath, () => {});
+      await downloadFromAny([
+        () => downloadGhcrArtifact(GHCR_OWNER, GHCR_MODELS_PACKAGE, VAD_MIRROR_TAG, vPath),
+        () => downloadFile(VAD_MODEL_URL, vPath, () => {}),
+      ]);
     } catch {
       fs.rmSync(vPath, { force: true });
     }

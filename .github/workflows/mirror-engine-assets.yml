@@ -1,0 +1,92 @@
+name: Mirror engine assets to GHCR
+
+# Everything the host role downloads at runtime that isn't built here —
+# the Windows whisper-cli zips from ggml-org/whisper.cpp's releases, the
+# Whisper models and the Silero VAD model from Hugging Face — copied into
+# this account's GitHub Packages, so Mova Flow keeps working if any upstream
+# file moves, gets renamed or disappears. Same OCI-artifact approach as the
+# macOS binary (build-whisper-macos.yml); engine.ts tries these first and
+# only falls back to the upstream URLs.
+#
+# Run manually (workflow_dispatch) after bumping WHISPER_CPP_TAG in
+# engine.ts, or when a model is added to MODEL_PRESETS.
+#
+# One-time manual step after the first run: new GHCR packages are Private.
+# Set both to Public, or the app's anonymous pulls fail (it then falls back
+# to upstream, so nothing breaks — the mirror just isn't used):
+#   https://github.com/users/f3an/packages/container/whisper-cli-windows-x64/settings
+#   https://github.com/users/f3an/packages/container/whisper-models/settings
+on:
+  workflow_dispatch:
+    inputs:
+      whisper_tag:
+        description: 'whisper.cpp build tag (must match WHISPER_CPP_TAG in engine.ts)'
+        required: true
+        default: 'b5130'
+
+permissions:
+  packages: write
+
+jobs:
+  windows-binaries:
+    name: whisper-cli for Windows (${{ matrix.variant }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            asset: whisper-bin-x64.zip
+          - variant: cuda
+            asset: whisper-cublas-12.4.0-bin-x64.zip
+    steps:
+      - name: Download from the upstream release
+        run: |
+          curl -fL --retry 3 -o "${{ matrix.asset }}" \
+            "https://github.com/ggml-org/whisper.cpp/releases/download/${{ inputs.whisper_tag }}/${{ matrix.asset }}"
+          ls -la "${{ matrix.asset }}"
+          unzip -l "${{ matrix.asset }}" | grep -i whisper-cli
+
+      - uses: oras-project/setup-oras@v2
+
+      - name: Push to GitHub Packages
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
+          oras push ghcr.io/f3an/whisper-cli-windows-x64:${{ inputs.whisper_tag }}-${{ matrix.variant }} \
+            --artifact-type application/vnd.mova-flow.whisper-cli.v1 \
+            --annotation "org.opencontainers.image.description=Mirror of ggml-org/whisper.cpp@${{ inputs.whisper_tag }} ${{ matrix.asset }} for Mova Flow's Windows host role." \
+            --annotation "org.opencontainers.image.source=https://github.com/f3an/Mova-Flow" \
+            "${{ matrix.asset }}:application/zip"
+
+  models:
+    name: model ${{ matrix.tag }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Keep in sync with MODEL_PRESETS and VAD_MODEL_FILE in engine.ts.
+      matrix:
+        include:
+          - { tag: tiny, file: ggml-tiny.bin, url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin' }
+          - { tag: base, file: ggml-base.bin, url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin' }
+          - { tag: small, file: ggml-small.bin, url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin' }
+          - { tag: medium, file: ggml-medium.bin, url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin' }
+          - { tag: large-v3, file: ggml-large-v3.bin, url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin' }
+          - { tag: large-v3-turbo, file: ggml-large-v3-turbo.bin, url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin' }
+          - { tag: silero-v5.1.2, file: ggml-silero-v5.1.2.bin, url: 'https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin' }
+    steps:
+      - name: Download from Hugging Face
+        run: |
+          curl -fL --retry 3 -o "${{ matrix.file }}" "${{ matrix.url }}"
+          ls -la "${{ matrix.file }}"
+          sha256sum "${{ matrix.file }}"
+
+      - uses: oras-project/setup-oras@v2
+
+      - name: Push to GitHub Packages
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
+          oras push ghcr.io/f3an/whisper-models:${{ matrix.tag }} \
+            --artifact-type application/vnd.mova-flow.model.v1 \
+            --annotation "org.opencontainers.image.description=Mirror of ${{ matrix.url }} for Mova Flow's host role." \
+            --annotation "org.opencontainers.image.source=https://github.com/f3an/Mova-Flow" \
+            "${{ matrix.file }}:application/octet-stream"
