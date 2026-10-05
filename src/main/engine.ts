@@ -4,6 +4,7 @@ import { execFile, spawn } from 'child_process';
 import { downloadFile } from './download';
 import { downloadGhcrArtifact } from './ghcr';
 import { SpeakerTurn, speakerAt } from './speakerNames';
+import { fixOtherLanguages, MixedLanguageTools } from './mixedLanguage';
 
 // Precompiled Windows builds of whisper.cpp are published under build tags
 // (b####), not version tags (v1.9.x) — the latter no longer ship binaries.
@@ -77,6 +78,13 @@ const VAD_MIRROR_TAG = 'silero-v5.1.2';
 
 function vadModelPath(userDataDir: string): string {
   return path.join(engineDir(userDataDir), VAD_MODEL_FILE);
+}
+
+// The tiny model spots stretches of a call in another language (see
+// mixedLanguage.ts). Optional, like VAD: without it calls are transcribed
+// in one language as before.
+function tinyModelPath(userDataDir: string): string {
+  return path.join(engineDir(userDataDir), 'ggml-tiny.bin');
 }
 
 // Asked once per engine binary: an older whisper-cli without --vad would
@@ -218,6 +226,19 @@ export async function ensureEngine(userDataDir: string, model: ModelChoice, onPr
       ]);
     } catch {
       fs.rmSync(vPath, { force: true });
+    }
+  }
+
+  const tPath = tinyModelPath(userDataDir);
+  if (!fs.existsSync(tPath)) {
+    onProgress('Downloading language-detection model...');
+    try {
+      await downloadFromAny([
+        () => downloadGhcrArtifact(GHCR_OWNER, GHCR_MODELS_PACKAGE, 'tiny', tPath),
+        () => downloadFile('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin', tPath, () => {}),
+      ]);
+    } catch {
+      fs.rmSync(tPath, { force: true });
     }
   }
 }
@@ -473,6 +494,7 @@ async function transcribeChannels(
   language: string,
   files: { left: string; right: string },
   speakers: SpeakerLabels,
+  mixed: MixedLanguageTools,
   onProgress: ProgressCb,
 ): Promise<TranscribeResult> {
   // One after the other: both at once would just fight over the GPU.
@@ -486,11 +508,15 @@ async function transcribeChannels(
   const call = await runWhisper(exe, argsFor(files.right, ['-ml', '1', '-sow']), language, () =>
     onProgress(`Transcribing the call... words: ${++count}`),
   );
+  const mainLang = (side: { detectedLanguage: string }) => (language && language !== 'auto' ? language : side.detectedLanguage);
+  const meWords = await fixOtherLanguages(mixed, files.left, me.segments, mainLang(me), onProgress);
+  const callWords = await fixOtherLanguages(mixed, files.right, call.segments, mainLang(call), onProgress);
+
   const timeline = speakers.timeline?.length ? speakers.timeline : null;
   const callLines = dropRepeats(
-    wordsToLines(call.segments, (start, end) => (timeline && speakerAt(timeline, start, end)) || speakers.right),
+    wordsToLines(callWords, (start, end) => (timeline && speakerAt(timeline, start, end)) || speakers.right),
   );
-  const meLines = dropRepeats(wordsToLines(me.segments, () => speakers.left));
+  const meLines = dropRepeats(wordsToLines(meWords, () => speakers.left));
 
   const lines = [...meLines.filter((line) => !isEcho(line, callLines)), ...callLines].sort((a, b) => a.start - b.start);
 
@@ -530,7 +556,14 @@ export async function transcribe(
     const split = splitStereoWav(filePath);
     if (split) {
       try {
-        return await transcribeChannels(exe, argsFor, language, split, speakers, onProgress);
+        const mixed: MixedLanguageTools = {
+          exe,
+          model: modelFilePath,
+          tinyModel: tinyModelPath(userDataDir),
+          vadArgs: vad ? ['--vad', '-vm', vPath] : [],
+          tmpDir: path.dirname(split.left),
+        };
+        return await transcribeChannels(exe, argsFor, language, split, speakers, mixed, onProgress);
       } finally {
         fs.rmSync(split.left, { force: true });
         fs.rmSync(split.right, { force: true });
