@@ -9,7 +9,7 @@ import {
   abortSystemAudio,
   ensureMicrophoneAccess,
   initSystemAudioCapture,
-  listMacAudioApps,
+  listCaptureSources,
   startMacSystemAudio,
   stopMacSystemAudio,
 } from './systemAudio';
@@ -525,7 +525,7 @@ ipcMain.handle('discover-hosts', async () => ({ hosts: await discoverHosts() }))
 // itself; these cover what it can't: the macOS mic prompt and, on macOS, the
 // system-audio helper.
 ipcMain.handle('ensure-microphone-access', () => ensureMicrophoneAccess());
-ipcMain.handle('system-audio-sources', () => listMacAudioApps());
+ipcMain.handle('system-audio-sources', () => listCaptureSources());
 ipcMain.handle('system-audio-start', async (evt: IpcMainInvokeEvent, appBundleId?: string) => {
   const win = BrowserWindow.fromWebContents(evt.sender);
   if (!win) throw new Error('No window');
