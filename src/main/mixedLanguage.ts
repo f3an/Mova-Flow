@@ -35,6 +35,8 @@ export interface MixedLanguageTools {
   tinyModel: string;
   /** --vad args, or [] when VAD isn't available. */
   vadArgs: string[];
+  /** -mc (and the vocabulary prompt) — the same as the first pass. */
+  contextArgs: string[];
   tmpDir: string;
 }
 
@@ -194,7 +196,7 @@ function score(words: Word[]): number {
 async function decode(tools: MixedLanguageTools, file: string, lang: string): Promise<{ words: Word[]; score: number }> {
   const base = `${file}.${lang}`;
   await run(tools.exe, [
-    '-m', tools.model, '-f', file, '-l', lang, '-mc', '0', '-ml', '1', '-sow',
+    '-m', tools.model, '-f', file, '-l', lang, ...tools.contextArgs, '-ml', '1', '-sow',
     ...tools.vadArgs, '-np', '-ojf', '-of', base,
   ]);
   const words = readJsonWords(`${base}.json`) ?? [];

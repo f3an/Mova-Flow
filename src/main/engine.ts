@@ -5,6 +5,7 @@ import { downloadFile } from './download';
 import { downloadGhcrArtifact } from './ghcr';
 import { SpeakerTurn, speakerAt } from './speakerNames';
 import { fixOtherLanguages, MixedLanguageTools, readJsonWords, Word } from './mixedLanguage';
+import { applyReplacements, EMPTY_VOCABULARY, Vocabulary, vocabularyPrompt } from './vocabulary';
 
 // Precompiled Windows builds of whisper.cpp are published under build tags
 // (b####), not version tags (v1.9.x) — the latter no longer ship binaries.
@@ -87,22 +88,25 @@ function tinyModelPath(userDataDir: string): string {
   return path.join(engineDir(userDataDir), 'ggml-tiny.bin');
 }
 
-// Asked once per engine binary: an older whisper-cli without --vad would
-// reject the flag and fail the whole job, where skipping VAD only costs accuracy.
-const vadSupport = new Map<string, Promise<boolean>>();
+// Asked once per engine binary: an older whisper-cli without --vad (or
+// --carry-initial-prompt) would reject the flag and fail the whole job, where
+// skipping it only costs accuracy.
+const cliHelp = new Map<string, Promise<string>>();
 
-function cliSupportsVad(exe: string): Promise<boolean> {
-  let known = vadSupport.get(exe);
-  if (!known) {
-    known = new Promise((resolve) => {
+function cliSupports(exe: string, flag: string): Promise<boolean> {
+  let help = cliHelp.get(exe);
+  if (!help) {
+    help = new Promise((resolve) => {
       execFile(exe, ['--help'], { cwd: path.dirname(exe), timeout: 10000 }, (_err, stdout, stderr) =>
-        resolve(/--vad\b/.test(`${stdout}${stderr}`)),
+        resolve(`${stdout}${stderr}`),
       );
     });
-    vadSupport.set(exe, known);
+    cliHelp.set(exe, help);
   }
-  return known;
+  return help.then((text) => new RegExp(`${flag}\\b`).test(text));
 }
+
+const cliSupportsVad = (exe: string) => cliSupports(exe, '--vad');
 
 function binDir(userDataDir: string): string {
   return path.join(engineDir(userDataDir), 'bin');
@@ -547,10 +551,32 @@ export async function transcribe(
   language: string,
   onProgress: ProgressCb,
   speakers?: SpeakerLabels,
+  vocabulary: Vocabulary = EMPTY_VOCABULARY,
+): Promise<TranscribeResult> {
+  const result = await transcribeText(userDataDir, modelFilePath, filePath, language, onProgress, speakers, vocabulary);
+  return { ...result, text: applyReplacements(result.text, vocabulary) };
+}
+
+async function transcribeText(
+  userDataDir: string,
+  modelFilePath: string,
+  filePath: string,
+  language: string,
+  onProgress: ProgressCb,
+  speakers: SpeakerLabels | undefined,
+  vocabulary: Vocabulary,
 ): Promise<TranscribeResult> {
   const exe = cliPath(userDataDir);
   const vPath = vadModelPath(userDataDir);
   const vad = fs.existsSync(vPath) && (await cliSupportsVad(exe));
+  // The vocabulary's terms as a prompt carried into every window. That needs
+  // -mc 1 rather than 0 (0 drops the prompt too) — one token of decoded
+  // text, not enough to start a loop.
+  const prompt = vocabularyPrompt(vocabulary);
+  const contextArgs =
+    prompt && (await cliSupports(exe, '--carry-initial-prompt'))
+      ? ['-mc', '1', '--prompt', prompt, '--carry-initial-prompt']
+      : ['-mc', '0'];
   // whisper-cli defaults to 'en' when -l is omitted — it does NOT auto-detect
   // by default — so auto mode needs an explicit '-l auto' or everything gets
   // forced through as English.
@@ -559,7 +585,7 @@ export async function transcribe(
   // window, and the next — an hour of an interview came back as the same
   // line over and over. Without it lines also come back as whole sentences.
   const argsFor = (file: string, extra: string[] = []) => [
-    '-m', modelFilePath, '-f', file, '-l', language || 'auto', '-mc', '0',
+    '-m', modelFilePath, '-f', file, '-l', language || 'auto', ...contextArgs,
     ...extra,
     ...(vad ? ['--vad', '-vm', vPath] : []),
   ];
@@ -569,6 +595,7 @@ export async function transcribe(
     model: modelFilePath,
     tinyModel: tinyModelPath(userDataDir),
     vadArgs: vad ? ['--vad', '-vm', vPath] : [],
+    contextArgs,
     tmpDir: path.dirname(filePath),
   };
 

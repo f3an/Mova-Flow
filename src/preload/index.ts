@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('api', {
   read_recording: (id: string) => ipcRenderer.invoke('read-recording', id),
   show_recording: (id: string) => ipcRenderer.invoke('show-recording', id),
   delete_recording: (id: string) => ipcRenderer.invoke('delete-recording', id),
+  get_vocabulary: () => ipcRenderer.invoke('get-vocabulary'),
+  save_vocabulary: (vocabulary: unknown, useHost: boolean) => ipcRenderer.invoke('save-vocabulary', vocabulary, useHost),
   get_update_state: () => ipcRenderer.invoke('get-update-state'),
   install_update: () => ipcRenderer.invoke('install-update'),
   download_update: () => ipcRenderer.invoke('download-update'),
