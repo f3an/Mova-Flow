@@ -7,7 +7,12 @@
 // Usage:
 //   mova-audio-tap list
 //     Prints a JSON array of apps that have audio streams right now:
-//     [{"bundleId":"us.zoom.xos","name":"zoom.us","playing":true}, …]
+//     [{"bundleId":"us.zoom.xos","name":"zoom.us","playing":true,
+//       "icon":"<base64 PNG>","windowIds":[1234, …]}, …]
+//     windowIds are the app's windows, largest first — the IDs
+//     Electron's desktopCapturer uses ("window:<id>:0"), so the app can show
+//     a thumbnail of each. Window owners are readable without the Screen
+//     Recording permission; only the thumbnails themselves need it.
 //   mova-audio-tap <out.wav> [--app <bundleId>]
 //     Records everything the system plays — or only that app (and its helper
 //     processes) — as 16 kHz mono 16-bit WAV (what whisper-cli reads; ~115
@@ -116,17 +121,56 @@ func owningApp(_ process: AudioProcess, among apps: [NSRunningApplication]) -> N
     .max { ($0.bundleIdentifier?.count ?? 0) < ($1.bundleIdentifier?.count ?? 0) }
 }
 
+/** 64 px PNG of the app's icon, base64. */
+func iconPNG(_ app: NSRunningApplication) -> String? {
+  guard let icon = app.icon else { return nil }
+  let size = NSSize(width: 64, height: 64)
+  guard let rep = NSBitmapImageRep(
+    bitmapDataPlanes: nil, pixelsWide: 64, pixelsHigh: 64, bitsPerSample: 8, samplesPerPixel: 4,
+    hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+  else { return nil }
+  NSGraphicsContext.saveGraphicsState()
+  NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+  icon.draw(in: NSRect(origin: .zero, size: size))
+  NSGraphicsContext.restoreGraphicsState()
+  return rep.representation(using: .png, properties: [:])?.base64EncodedString()
+}
+
+/** Normal-layer windows of `pid` (any Space, minimized too), largest first. */
+func windowIds(of pid: pid_t) -> [Int] {
+  guard let info = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return [] }
+  return info
+    .filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
+    .compactMap { window -> (id: Int, area: Double)? in
+      guard let id = window[kCGWindowNumber as String] as? Int,
+        let bounds = window[kCGWindowBounds as String] as? [String: Double]
+      else { return nil }
+      let area = (bounds["Width"] ?? 0) * (bounds["Height"] ?? 0)
+      return area > 10_000 ? (id, area) : nil
+    }
+    .sorted { $0.area > $1.area }
+    .map(\.id)
+}
+
 func listApps() -> Never {
   let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
-  var byApp: [String: (name: String, playing: Bool)] = [:]
+  var byApp: [String: (app: NSRunningApplication, playing: Bool)] = [:]
   let ownPid = ProcessInfo.processInfo.processIdentifier
   for process in audioProcesses() where process.pid != ownPid {
     guard let app = owningApp(process, among: apps), let id = app.bundleIdentifier else { continue }
-    let previous = byApp[id]
-    byApp[id] = (app.localizedName ?? id, (previous?.playing ?? false) || process.playing)
+    byApp[id] = (app, (byApp[id]?.playing ?? false) || process.playing)
   }
   let list = byApp
-    .map { ["bundleId": $0.key, "name": $0.value.name, "playing": $0.value.playing] as [String: Any] }
+    .map { id, entry -> [String: Any] in
+      var item: [String: Any] = [
+        "bundleId": id,
+        "name": entry.app.localizedName ?? id,
+        "playing": entry.playing,
+        "windowIds": windowIds(of: entry.app.processIdentifier),
+      ]
+      if let icon = iconPNG(entry.app) { item["icon"] = icon }
+      return item
+    }
     .sorted { a, b in
       let (pa, pb) = (a["playing"] as! Bool, b["playing"] as! Bool)
       return pa != pb ? pa : (a["name"] as! String).localizedCaseInsensitiveCompare(b["name"] as! String) == .orderedAscending

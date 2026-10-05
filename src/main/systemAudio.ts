@@ -51,6 +51,20 @@ export interface AudioApp {
   name: string;
   /** Producing sound right now. */
   playing: boolean;
+  /** base64 PNG, 64 px. */
+  icon?: string;
+  /** The app's windows, largest first — desktopCapturer's "window:<id>:0". */
+  windowIds: number[];
+}
+
+/** One card in the "what to record" picker. */
+export interface CaptureSource {
+  bundleId: string;
+  name: string;
+  playing: boolean;
+  /** data: URLs. The thumbnail is missing without Screen Recording access. */
+  icon?: string;
+  thumbnail?: string;
 }
 
 /** Apps that currently have audio streams, for picking what to record
@@ -72,6 +86,36 @@ export function listMacAudioApps(): Promise<AudioApp[]> {
 }
 
 let tap: { child: ChildProcessWithoutNullStreams; file: string; stopped: Promise<void> } | null = null;
+
+/** Apps with audio, each with a thumbnail of its largest window. Thumbnails
+ * need the Screen Recording permission on macOS — asked for once, the first
+ * time; nothing is recorded with it, it only renders these previews. Without
+ * it the picker falls back to app icons and recording works the same. */
+export async function listCaptureSources(): Promise<CaptureSource[]> {
+  const apps = await listMacAudioApps();
+  if (!apps.length) return [];
+
+  const thumbnails = new Map<number, string>();
+  if (systemPreferences.getMediaAccessStatus('screen') !== 'denied') {
+    try {
+      const windows = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 480, height: 300 } });
+      for (const win of windows) {
+        const id = Number(win.id.split(':')[1]);
+        if (!win.thumbnail.isEmpty()) thumbnails.set(id, win.thumbnail.toDataURL());
+      }
+    } catch {
+      /* no access — icons only */
+    }
+  }
+
+  return apps.map((app) => ({
+    bundleId: app.bundleId,
+    name: app.name,
+    playing: app.playing,
+    icon: app.icon ? `data:image/png;base64,${app.icon}` : undefined,
+    thumbnail: app.windowIds.map((id) => thumbnails.get(id)).find(Boolean),
+  }));
+}
 
 /** Starts the macOS helper — everything the system plays, or only `appBundleId`
  * — resolving with the epoch-ms the recording started; its level readings are
