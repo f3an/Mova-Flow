@@ -426,23 +426,42 @@ function isEcho(mine: Segment, call: Segment[]): boolean {
   });
 }
 
-/** With caption names, the call side is transcribed word by word (-ml 1)
- * so a line can be cut where the captions say the speaker changed — two
- * people talking back to back otherwise come back as one segment, all of
- * it credited to whoever spoke longer. Words are regrouped into lines per
- * speaker, also breaking on pauses. */
-function namedCallLines(words: Segment[], speakers: SpeakerLabels): (Segment & { label: string })[] {
+// Both sides are transcribed word by word (-ml 1 -sow) and regrouped into
+// lines here. Whisper's own segments run across pauses: on a call, a reply
+// would start back where the speaker last stopped — before the other
+// side's question — and the conversation came out of order. Word times
+// show where the pause is: whisper stretches a word next to it — the first
+// word after it (a new sentence, capitalized) or the last one before it.
+const PAUSE_S = 1.2;
+/** Longer than any real word: the rest is the pause before it. */
+const MAX_WORD_S = 1.5;
+/** A line this long is cut at the next sentence end. */
+const LONG_LINE_S = 20;
+
+/** Words regrouped into lines: a new line after a pause, where `labelOf`
+ * changes (Meet caption names), or at a sentence end once a line is long. */
+function wordsToLines(words: Segment[], labelOf: (start: number, end: number) => string): (Segment & { label: string })[] {
   const lines: (Segment & { label: string })[] = [];
   for (const word of words) {
     const text = word.text.trim();
     if (!text) continue;
-    const label = speakerAt(speakers.timeline!, word.start, word.end) || speakers.right;
+    let { start, end } = word;
+    if (end - start > MAX_WORD_S) {
+      if (/^\p{Lu}/u.test(text)) start = end - MAX_WORD_S;
+      else end = start + MAX_WORD_S;
+    }
+    const label = labelOf(start, end);
     const last = lines[lines.length - 1];
-    if (last && last.label === label && word.start - last.end < 1.2) {
-      last.end = word.end;
+    const joins =
+      last &&
+      last.label === label &&
+      start - last.end < PAUSE_S &&
+      !(last.end - last.start > LONG_LINE_S && /[.?!…]$/.test(last.text));
+    if (joins) {
+      last.end = end;
       last.text += ` ${text}`;
     } else {
-      lines.push({ start: word.start, end: word.end, text, label });
+      lines.push({ start, end, text, label });
     }
   }
   return lines;
@@ -459,25 +478,21 @@ async function transcribeChannels(
   // One after the other: both at once would just fight over the GPU.
   let count = 0;
   onProgress('Transcribing your side...');
-  const me = await runWhisper(exe, argsFor(files.left), language, () =>
-    onProgress(`Transcribing your side... segments: ${++count}`),
+  const me = await runWhisper(exe, argsFor(files.left, ['-ml', '1', '-sow']), language, () =>
+    onProgress(`Transcribing your side... words: ${++count}`),
   );
   count = 0;
   onProgress('Transcribing the call...');
-  const named = !!speakers.timeline?.length;
-  const call = await runWhisper(exe, argsFor(files.right, named ? ['-ml', '1', '-sow'] : []), language, () =>
-    onProgress(`Transcribing the call... segments: ${++count}`),
+  const call = await runWhisper(exe, argsFor(files.right, ['-ml', '1', '-sow']), language, () =>
+    onProgress(`Transcribing the call... words: ${++count}`),
   );
-  const callLines = named
-    ? namedCallLines(call.segments, speakers)
-    : dropRepeats(call.segments).map((segment) => ({ ...segment, label: speakers.right }));
+  const timeline = speakers.timeline?.length ? speakers.timeline : null;
+  const callLines = dropRepeats(
+    wordsToLines(call.segments, (start, end) => (timeline && speakerAt(timeline, start, end)) || speakers.right),
+  );
+  const meLines = dropRepeats(wordsToLines(me.segments, () => speakers.left));
 
-  const lines = [
-    ...dropRepeats(me.segments)
-      .filter((segment) => !isEcho(segment, callLines))
-      .map((segment) => ({ ...segment, label: speakers.left })),
-    ...callLines,
-  ].sort((a, b) => a.start - b.start);
+  const lines = [...meLines.filter((line) => !isEcho(line, callLines)), ...callLines].sort((a, b) => a.start - b.start);
 
   // Whichever side said more decides the language reported for the file.
   const detectedLanguage = (me.segments.length >= call.segments.length ? me : call).detectedLanguage;
