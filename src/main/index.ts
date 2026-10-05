@@ -252,16 +252,23 @@ function toggleRecordingFromTray(): void {
   mainWindow?.webContents.send('tray-toggle-recording');
 }
 
+/** The tray menu, and on macOS the Dock icon's right-click menu too (shown
+ * above the system's own items, only while the app runs). */
 function updateTrayMenu(): void {
+  const recordItem = {
+    label: recordingActive ? '■ Stop & transcribe' : '● Record a call',
+    click: toggleRecordingFromTray,
+  };
   tray?.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Open Mova Flow', click: showMainWindow },
       { type: 'separator' },
-      { label: recordingActive ? '■ Stop & transcribe' : '● Record a call', click: toggleRecordingFromTray },
+      recordItem,
       { type: 'separator' },
       { label: 'Exit', click: () => app.quit() },
     ]),
   );
+  app.dock?.setMenu(Menu.buildFromTemplate([recordItem]));
 }
 
 function createTray(): void {
