@@ -391,6 +391,20 @@ function splitStereoWav(filePath: string): { left: string; right: string } | nul
   return null;
 }
 
+/** Drops the decoder's loops: a line (3+ words) that repeats one of the last
+ * few kept lines word for word. Short replies ("Okay.", "Mm-hm.") can
+ * genuinely repeat and are left alone. */
+function dropRepeats<T extends Segment>(segments: T[]): T[] {
+  const recent: string[] = [];
+  return segments.filter((segment) => {
+    const key = segment.text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    if (key.split(' ').length >= 3 && recent.includes(key)) return false;
+    recent.push(key);
+    if (recent.length > 4) recent.shift();
+    return true;
+  });
+}
+
 function words(text: string): Set<string> {
   return new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean));
 }
@@ -456,10 +470,10 @@ async function transcribeChannels(
   );
   const callLines = named
     ? namedCallLines(call.segments, speakers)
-    : call.segments.map((segment) => ({ ...segment, label: speakers.right }));
+    : dropRepeats(call.segments).map((segment) => ({ ...segment, label: speakers.right }));
 
   const lines = [
-    ...me.segments
+    ...dropRepeats(me.segments)
       .filter((segment) => !isEcho(segment, callLines))
       .map((segment) => ({ ...segment, label: speakers.left })),
     ...callLines,
@@ -487,8 +501,12 @@ export async function transcribe(
   // whisper-cli defaults to 'en' when -l is omitted — it does NOT auto-detect
   // by default — so auto mode needs an explicit '-l auto' or everything gets
   // forced through as English.
+  // -mc 0: don't feed each window the text decoded so far. With it, one
+  // misheard phrase on a long recording became the prompt for the next
+  // window, and the next — an hour of an interview came back as the same
+  // line over and over. Without it lines also come back as whole sentences.
   const argsFor = (file: string, extra: string[] = []) => [
-    '-m', modelFilePath, '-f', file, '-l', language || 'auto',
+    '-m', modelFilePath, '-f', file, '-l', language || 'auto', '-mc', '0',
     ...extra,
     ...(vad ? ['--vad', '-vm', vPath] : []),
   ];
@@ -512,7 +530,7 @@ export async function transcribe(
   const { segments, detectedLanguage } = await runWhisper(exe, argsFor(filePath, speakers ? ['--diarize'] : []), language, () =>
     onProgress(`Processed segments: ${++count}`),
   );
-  const lines = segments.map((segment) => {
+  const lines = dropRepeats(segments).map((segment) => {
     let text = segment.text;
     const speaker = SPEAKER_RE.exec(text);
     if (speaker && speakers) {
