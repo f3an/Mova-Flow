@@ -88,6 +88,7 @@ const UK: Record<string, string> = {
   'history.hideText': 'Сховати текст',
   'history.delete': 'Видалити',
   'history.delete.confirm': 'Видалити цей запис і його транскрипцію? Це незворотно.',
+  'history.retranscribe': 'Розпізнати ще раз',
   'history.pending.recording': 'Іде запис',
   'history.pending.sending': 'Розпізнається...',
   'history.pending.notYet': 'Не розпізнано',

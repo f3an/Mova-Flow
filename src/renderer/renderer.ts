@@ -1123,11 +1123,28 @@ function historyCardHtml(item: HistoryItem): string {
         <button class="action secondary" data-action="play">${t('history.play', 'Play')}</button>
         <button class="action secondary" data-action="text">${t('history.viewText', 'View transcript')}</button>
         <button class="action secondary" data-action="download">${t('job.download', 'Download .txt')}</button>
+        <button class="action secondary" data-action="retranscribe">${t('history.retranscribe', 'Transcribe again')}</button>
         <button class="action danger" data-action="delete">${t('history.delete', 'Delete')}</button>
       </div>
       <div class="transcript-box" hidden></div>
     </div>
   `;
+}
+
+/** A call recording — 16-bit PCM stereo, me left / call right — gets
+ * transcribed per side (speakers=me-others); anything else as one mix. */
+function isStereoPcmWav(head: Uint8Array): boolean {
+  if (head.length < 36) return false;
+  const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
+  const tag = (at: number) => String.fromCharCode(...head.subarray(at, at + 4));
+  return (
+    tag(0) === 'RIFF' &&
+    tag(8) === 'WAVE' &&
+    tag(12) === 'fmt ' &&
+    view.getUint16(20, true) === 1 &&
+    view.getUint16(22, true) === 2 &&
+    view.getUint16(34, true) === 16
+  );
 }
 
 function buildAudioPlayer(container: HTMLElement, src: string): void {
@@ -1145,6 +1162,7 @@ function wireHistoryCard(card: HTMLDivElement, backend: HistoryBackend): void {
   const textBtn = card.querySelector('[data-action="text"]') as HTMLButtonElement;
   const downloadBtn = card.querySelector('[data-action="download"]') as HTMLButtonElement;
   const deleteBtn = card.querySelector('[data-action="delete"]') as HTMLButtonElement;
+  const retranscribeBtn = card.querySelector('[data-action="retranscribe"]') as HTMLButtonElement;
   const audioSlot = card.querySelector('.history-audio') as HTMLDivElement;
   const textBox = card.querySelector('.transcript-box') as HTMLDivElement;
 
@@ -1187,6 +1205,26 @@ function wireHistoryCard(card: HTMLDivElement, backend: HistoryBackend): void {
       downloadTextAsFile(text, `transcript_${id}.txt`);
     } catch {
       // Nothing sensible to do — the button just stays clickable to retry.
+    }
+  });
+
+  // The same audio once more — e.g. after an engine fix, or with another
+  // language picked on the Record tab. The new transcript is a new entry;
+  // this one stays until deleted.
+  retranscribeBtn.addEventListener('click', async () => {
+    retranscribeBtn.disabled = true;
+    try {
+      const blob = await backend.audioBlob(id, ext);
+      const name = card.querySelector('.job-name')?.textContent || `audio${ext}`;
+      const file = new File([blob], name, { type: blob.type });
+      const stereo = isStereoPcmWav(new Uint8Array(await blob.slice(0, 64).arrayBuffer()));
+      showTab('record');
+      // Without a server the Record tab shows a banner saying why.
+      if (recordUpload) void recordUpload(file, stereo ? { speakers: 'me-others' } : {});
+    } catch {
+      // audio unavailable — the button stays clickable to retry
+    } finally {
+      retranscribeBtn.disabled = false;
     }
   });
 
