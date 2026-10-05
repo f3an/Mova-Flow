@@ -1,4 +1,5 @@
 import { Lang, getLang, setLang, t } from './i18n';
+import { CallRecorder } from './callRecorder';
 
 interface ServerState {
   stage: 'stopped' | 'checking' | 'installing' | 'starting' | 'running' | 'error';
@@ -78,6 +79,10 @@ interface WhisperApi {
   set_auto_update(enabled: boolean): Promise<{ ok: boolean }>;
   on_update_state(callback: (state: UpdateState) => void): void;
   discover_hosts(): Promise<{ hosts: DiscoveredHost[] }>;
+  ensure_microphone_access(): Promise<boolean>;
+  system_audio_start(): Promise<{ startedAt: number }>;
+  system_audio_stop(): Promise<Uint8Array | null>;
+  on_system_audio_level(callback: (level: number) => void): void;
   check_for_updates(): Promise<UpdateState>;
 }
 
@@ -247,6 +252,20 @@ async function refreshTranscribeGate(): Promise<void> {
   if (gate.dataset.built === base) return; // already built for this exact base
   gate.dataset.built = base;
   gate.innerHTML = `
+    <div class="rec-panel" id="recPanel">
+      <div class="rec-head">
+        <button class="action" id="recBtn">● ${t('rec.start', 'Record a call')}</button>
+        <span class="rec-timer" id="recTimer" hidden>00:00</span>
+      </div>
+      <div class="rec-meters" id="recMeters" hidden>
+        <div class="rec-meter"><span>${t('rec.me', 'Me')}</span><div class="meter-track"><div class="meter-fill" id="meterMe"></div></div></div>
+        <div class="rec-meter"><span>${t('rec.call', 'Call')}</span><div class="meter-track"><div class="meter-fill" id="meterCall"></div></div></div>
+      </div>
+      <p class="rec-hint" id="recHint">${t(
+        'rec.hint',
+        'Records your microphone and everything this computer plays — a Zoom, Teams or Telegram call — and marks who said what. Headphones give the cleanest split.',
+      )}</p>
+    </div>
     <div class="drop" id="drop" role="button" tabindex="0" aria-label="Choose an audio file">
       <input type="file" id="fileInput" accept=".mp3,.wav,.ogg,.flac,.m4a,.mov">
       <div class="drop-label">${t('drop.label', 'Drag an audio file here, or click to choose')}</div>
@@ -263,6 +282,89 @@ async function refreshTranscribeGate(): Promise<void> {
     <div id="jobs"></div>
   `;
   wireTranscribeUI(base);
+}
+
+// ── Record a call ────────────────────────────────────────────────────────
+// System-audio levels on macOS come from the main process (the capture
+// helper), so they're routed to whichever recorder is currently running.
+let activeCallLevel: ((level: number) => void) | null = null;
+window.api.on_system_audio_level((level) => activeCallLevel?.(level));
+
+function wireCallRecorder(upload: (file: File) => void): void {
+  const recBtn = document.getElementById('recBtn') as HTMLButtonElement;
+  const timer = document.getElementById('recTimer') as HTMLSpanElement;
+  const meters = document.getElementById('recMeters') as HTMLDivElement;
+  const hint = document.getElementById('recHint') as HTMLParagraphElement;
+  const meterMe = document.getElementById('meterMe') as HTMLDivElement;
+  const meterCall = document.getElementById('meterCall') as HTMLDivElement;
+  const hintText = hint.textContent || '';
+
+  // Speech RMS rarely goes past ~0.3; scale so normal talking fills most of the bar.
+  const showLevel = (meter: HTMLDivElement, level: number) => {
+    meter.style.width = `${Math.min(100, Math.round(Math.sqrt(level) * 180))}%`;
+  };
+  const recorder = new CallRecorder(window.api, window.platform, (side, level) =>
+    showLevel(side === 'me' ? meterMe : meterCall, level),
+  );
+
+  let startedAt = 0;
+  let tick: ReturnType<typeof setInterval> | null = null;
+  const setIdle = () => {
+    if (tick) clearInterval(tick);
+    tick = null;
+    activeCallLevel = null;
+    recBtn.disabled = false;
+    recBtn.classList.remove('danger');
+    recBtn.textContent = `● ${t('rec.start', 'Record a call')}`;
+    timer.hidden = true;
+    meters.hidden = true;
+    showLevel(meterMe, 0);
+    showLevel(meterCall, 0);
+  };
+
+  recBtn.addEventListener('click', async () => {
+    if (tick) {
+      recBtn.disabled = true;
+      recBtn.textContent = t('rec.stopping', 'Stopping...');
+      try {
+        const wav = await recorder.stop();
+        const stamp = new Date(startedAt).toISOString().slice(0, 16).replace('T', ' ').replace(':', '-');
+        upload(new File([wav], `Call ${stamp}.wav`, { type: 'audio/wav' }));
+      } finally {
+        setIdle();
+      }
+      return;
+    }
+
+    recBtn.disabled = true;
+    recBtn.textContent = t('rec.starting', 'Starting...');
+    hint.textContent = hintText;
+    hint.classList.remove('error-text');
+    activeCallLevel = (level) => showLevel(meterCall, level);
+    try {
+      await recorder.start();
+    } catch (err) {
+      setIdle();
+      // IPC errors arrive as "Error invoking remote method '…': Error: <message>".
+      const message = ((err as Error).message || '').replace(/^Error invoking remote method '[^']+': (\w*Error: )?/, '');
+      hint.textContent = message || t('rec.err.start', "Couldn't start recording.");
+      hint.classList.add('error-text');
+      return;
+    }
+    startedAt = Date.now();
+    recBtn.disabled = false;
+    recBtn.classList.add('danger');
+    recBtn.textContent = `■ ${t('rec.stop', 'Stop & transcribe')}`;
+    timer.hidden = false;
+    meters.hidden = false;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const render = () => {
+      const s = Math.floor((Date.now() - startedAt) / 1000);
+      timer.textContent = `${s >= 3600 ? `${Math.floor(s / 3600)}:` : ''}${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
+    };
+    render();
+    tick = setInterval(render, 1000);
+  });
 }
 
 // Formats whisper-cli can read directly (same list as ALLOWED_EXT on the
@@ -371,6 +473,8 @@ function wireTranscribeUI(base: string): void {
     if (file) uploadFile(file);
   });
 
+  wireCallRecorder((file) => uploadFile(file, { speakers: 'me-others' }));
+
   function createJobCard(filename: string): HTMLDivElement {
     const card = document.createElement('div');
     card.className = 'job';
@@ -395,7 +499,9 @@ function wireTranscribeUI(base: string): void {
     if (progressEl) progressEl.outerHTML = `<div class="error-text">${escapeHtml(message)}</div>`;
   }
 
-  async function uploadFile(file: File): Promise<void> {
+  /** `speakers: 'me-others'`: a stereo recording with the user on the left
+   * channel and the call on the right — the host labels lines Me / Others. */
+  async function uploadFile(file: File, options: { speakers?: 'me-others' } = {}): Promise<void> {
     const jobCard = createJobCard(file.name);
     const progressEl = jobCard.querySelector('.progress-text');
 
@@ -411,6 +517,7 @@ function wireTranscribeUI(base: string): void {
     const formData = new FormData();
     formData.append('file', uploadable);
     formData.append('language', langSelect.value);
+    if (options.speakers) formData.append('speakers', options.speakers);
 
     try {
       if (progressEl) progressEl.textContent = t('job.uploading', 'Uploading file...');
