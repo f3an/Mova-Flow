@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('api', {
   get_client_history: () => ipcRenderer.invoke('get-client-history'),
   get_client_history_text: (id: string) => ipcRenderer.invoke('get-client-history-text', id),
   get_client_history_audio: (id: string) => ipcRenderer.invoke('get-client-history-audio', id),
+  set_client_history_text: (id: string, text: string) => ipcRenderer.invoke('set-client-history-text', id, text),
   delete_client_history_entry: (id: string) => ipcRenderer.invoke('delete-client-history-entry', id),
   recording_begin: (name: string) => ipcRenderer.invoke('recording-begin', name),
   recording_append: (id: string, side: string, startedAt: number, pcm: ArrayBuffer) =>

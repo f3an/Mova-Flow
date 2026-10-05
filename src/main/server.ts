@@ -185,7 +185,10 @@ export class ServerController {
     fs.mkdirSync(audioDir, { recursive: true });
 
     const app = express();
-    app.use(express.json());
+    // Small JSON bodies everywhere; the one big one (a corrected transcript,
+    // PUT, authorized and local only) gets its own limit on its route.
+    const smallJson = express.json();
+    app.use((req, res, next) => (req.method === 'PUT' ? next() : smallJson(req, res, next)));
 
     // The renderer always loads locally (file://), so fetch() to /api/... is
     // always cross-origin — without this header Electron would just block the
@@ -194,7 +197,7 @@ export class ServerController {
     app.use((req, res, next) => {
       res.header('Access-Control-Allow-Origin', '*');
       res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-      res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       if (req.method === 'OPTIONS') {
         res.sendStatus(204);
         return;
@@ -352,6 +355,25 @@ export class ServerController {
       }
       res.json({ text: fs.readFileSync(textFile, 'utf-8') });
     });
+
+    // A transcript corrected by hand in the app (see the correction popover
+    // in renderer.ts) replaces the original.
+    app.put(
+      '/api/history/:id/text',
+      requireAuth,
+      requireLocal,
+      express.json({ limit: '10mb' }),
+      (req: Request<{ id: string }>, res: Response) => {
+        const { id } = req.params;
+        const text = (req.body as { text?: unknown })?.text;
+        if (!idParamSafe(id) || !loadHistory(userDataDir).some((e) => e.id === id) || typeof text !== 'string') {
+          res.status(404).json({ error: 'Transcript not found' });
+          return;
+        }
+        fs.writeFileSync(path.join(outputDir, `${id}.txt`), text, 'utf-8');
+        res.json({ ok: true });
+      },
+    );
 
     app.get('/api/history/:id/audio', requireAuth, requireLocal, (req: Request<{ id: string }>, res: Response) => {
       const { id } = req.params;

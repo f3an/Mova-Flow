@@ -76,6 +76,13 @@ export function getClientHistoryText(userDataDir: string, id: string): string | 
   }
 }
 
+/** Saves a corrected transcript over the original. */
+export function setClientHistoryText(userDataDir: string, id: string, text: string): boolean {
+  if (!ID_RE.test(id) || !loadHistory(userDataDir).some((e) => e.id === id)) return false;
+  fs.writeFileSync(path.join(transcriptsDir(userDataDir), `${id}.txt`), text, 'utf-8');
+  return true;
+}
+
 export function getClientHistoryAudio(userDataDir: string, id: string): { data: Buffer; ext: string } | null {
   if (!ID_RE.test(id)) return null;
   const entry = loadHistory(userDataDir).find((e) => e.id === id);
