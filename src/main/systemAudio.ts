@@ -1,5 +1,5 @@
 import { app, BrowserWindow, desktopCapturer, session, systemPreferences } from 'electron';
-import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
+import { execFile, spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -46,11 +46,37 @@ function macSupportsTaps(): boolean {
   return major > 23 || (major === 23 && minor >= 2);
 }
 
+export interface AudioApp {
+  bundleId: string;
+  name: string;
+  /** Producing sound right now. */
+  playing: boolean;
+}
+
+/** Apps that currently have audio streams, for picking what to record
+ * (macOS only — Windows loopback can only take the whole system mix). */
+export function listMacAudioApps(): Promise<AudioApp[]> {
+  if (process.platform !== 'darwin' || !macSupportsTaps() || !fs.existsSync(helperPath())) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    execFile(helperPath(), ['list'], { timeout: 5000 }, (err, stdout) => {
+      if (err) return resolve([]);
+      try {
+        const apps = JSON.parse(stdout) as AudioApp[];
+        // Never offer recording Mova Flow itself.
+        resolve(apps.filter((a) => a.bundleId !== 'com.movaflow.app'));
+      } catch {
+        resolve([]);
+      }
+    });
+  });
+}
+
 let tap: { child: ChildProcessWithoutNullStreams; file: string; stopped: Promise<void> } | null = null;
 
-/** Starts the macOS helper; resolves with the epoch-ms the recording started,
- * and forwards its level readings to `win` as 'system-audio-level'. */
-export function startMacSystemAudio(win: BrowserWindow): Promise<{ startedAt: number }> {
+/** Starts the macOS helper — everything the system plays, or only `appBundleId`
+ * — resolving with the epoch-ms the recording started; its level readings are
+ * forwarded to `win` as 'system-audio-level'. */
+export function startMacSystemAudio(win: BrowserWindow, appBundleId?: string): Promise<{ startedAt: number }> {
   if (process.platform !== 'darwin') return Promise.reject(new Error('macOS only'));
   if (tap) return Promise.reject(new Error('Already recording.'));
   if (!macSupportsTaps()) {
@@ -60,7 +86,7 @@ export function startMacSystemAudio(win: BrowserWindow): Promise<{ startedAt: nu
   if (!fs.existsSync(exe)) return Promise.reject(new Error(`Audio capture helper is missing (${exe}).`));
 
   const file = path.join(app.getPath('temp'), `mova-flow-system-${Date.now()}.wav`);
-  const child = spawn(exe, [file]);
+  const child = spawn(exe, appBundleId ? [file, '--app', appBundleId] : [file]);
   let settled = false;
 
   return new Promise((resolve, reject) => {

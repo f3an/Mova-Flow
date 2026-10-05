@@ -46,7 +46,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   discover_hosts: () => ipcRenderer.invoke('discover-hosts'),
   ensure_microphone_access: () => ipcRenderer.invoke('ensure-microphone-access'),
-  system_audio_start: () => ipcRenderer.invoke('system-audio-start'),
+  system_audio_sources: () => ipcRenderer.invoke('system-audio-sources'),
+  system_audio_start: (appBundleId?: string) => ipcRenderer.invoke('system-audio-start', appBundleId),
+  set_recording_indicator: (recording: boolean) => ipcRenderer.invoke('set-recording-indicator', recording),
   system_audio_stop: () => ipcRenderer.invoke('system-audio-stop'),
   on_system_audio_level: (callback: (level: number) => void) => {
     ipcRenderer.on('system-audio-level', (_evt, level: number) => callback(level));

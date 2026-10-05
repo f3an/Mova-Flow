@@ -24,6 +24,8 @@ const UK: Record<string, string> = {
   'rec.stop': 'Зупинити й розпізнати',
   'rec.starting': 'Запускаю...',
   'rec.stopping': 'Зупиняю...',
+  'rec.source': 'Звук з',
+  'rec.source.all': 'Увесь звук системи',
   'rec.me': 'Я',
   'rec.call': 'Дзвінок',
   'rec.hint':

@@ -4,14 +4,21 @@
 // display-media audio is Windows-only), and a tap needs only the narrower
 // "System Audio Recording" permission — no screen recording.
 //
-// Usage: mova-audio-tap <out.wav>
-//   Writes 16 kHz mono 16-bit WAV (what whisper-cli reads; ~115 MB/hour).
-//   Stops when stdin closes (the app ends the recording) or on SIGTERM/SIGINT.
+// Usage:
+//   mova-audio-tap list
+//     Prints a JSON array of apps that have audio streams right now:
+//     [{"bundleId":"us.zoom.xos","name":"zoom.us","playing":true}, …]
+//   mova-audio-tap <out.wav> [--app <bundleId>]
+//     Records everything the system plays — or only that app (and its helper
+//     processes) — as 16 kHz mono 16-bit WAV (what whisper-cli reads; ~115
+//     MB/hour). Stops when stdin closes (the app ends the recording) or on
+//     SIGTERM/SIGINT.
 // stdout, one JSON object per line:
 //   {"event":"started","at":<epoch ms the recording started>}
 //   {"level":<0..1 RMS>}            ~10 times a second, for the UI meter
 //   {"event":"stopped","seconds":<recorded>}
 //   {"event":"error","message":"..."}   then exit 1
+import AppKit
 import AVFoundation
 import CoreAudio
 import Foundation
@@ -48,11 +55,105 @@ func defaultOutputDeviceUID() -> String {
   return uid as String
 }
 
-guard CommandLine.arguments.count == 2 else { fail("usage: mova-audio-tap <out.wav>") }
-let outURL = URL(fileURLWithPath: CommandLine.arguments[1])
+// ── Audio processes ─────────────────────────────────────────────────────
+// Core Audio has one "process object" per process that uses audio. Apps
+// often play through helper processes (Chrome's audio service, Electron
+// helpers…), so each is attributed to the regular app whose bundle ID is a
+// prefix of its own — that's what the user picks from.
 
-// A private, unmuted tap on everything the system plays.
-let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+/** Plain value properties only (pid_t, UInt32…) — strings go through readString. */
+func readProperty<T: BitwiseCopyable>(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector, _ initial: T) -> T? {
+  var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+  var value = initial
+  var size = UInt32(MemoryLayout<T>.size)
+  return AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value) == noErr ? value : nil
+}
+
+func readString(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {
+  var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+  var value: CFString = "" as CFString
+  var size = UInt32(MemoryLayout<CFString>.size)
+  let status = withUnsafeMutablePointer(to: &value) { AudioObjectGetPropertyData(object, &address, 0, nil, &size, $0) }
+  return status == noErr ? value as String : nil
+}
+
+func audioProcessObjects() -> [AudioObjectID] {
+  var address = AudioObjectPropertyAddress(
+    mSelector: kAudioHardwarePropertyProcessObjectList, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+  var size: UInt32 = 0
+  guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return [] }
+  var objects = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+  guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &objects) == noErr else { return [] }
+  return objects
+}
+
+struct AudioProcess {
+  let object: AudioObjectID
+  let pid: pid_t
+  let bundleId: String
+  let playing: Bool
+}
+
+func audioProcesses() -> [AudioProcess] {
+  audioProcessObjects().compactMap { object in
+    guard let pid = readProperty(object, kAudioProcessPropertyPID, pid_t(0)) else { return nil }
+    let bundle = readString(object, kAudioProcessPropertyBundleID) ?? ""
+    let playing = (readProperty(object, kAudioProcessPropertyIsRunningOutput, UInt32(0)) ?? 0) != 0
+    return AudioProcess(object: object, pid: pid, bundleId: bundle, playing: playing)
+  }
+}
+
+/** The regular (Dock) app a process belongs to — itself, or the app whose
+ * bundle ID prefixes its own (com.google.Chrome.helper → com.google.Chrome). */
+func owningApp(_ process: AudioProcess, among apps: [NSRunningApplication]) -> NSRunningApplication? {
+  if let app = NSRunningApplication(processIdentifier: process.pid), app.activationPolicy == .regular { return app }
+  guard !process.bundleId.isEmpty else { return nil }
+  return apps
+    .filter { app in
+      guard let id = app.bundleIdentifier else { return false }
+      return process.bundleId == id || process.bundleId.hasPrefix(id + ".")
+    }
+    .max { ($0.bundleIdentifier?.count ?? 0) < ($1.bundleIdentifier?.count ?? 0) }
+}
+
+func listApps() -> Never {
+  let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+  var byApp: [String: (name: String, playing: Bool)] = [:]
+  let ownPid = ProcessInfo.processInfo.processIdentifier
+  for process in audioProcesses() where process.pid != ownPid {
+    guard let app = owningApp(process, among: apps), let id = app.bundleIdentifier else { continue }
+    let previous = byApp[id]
+    byApp[id] = (app.localizedName ?? id, (previous?.playing ?? false) || process.playing)
+  }
+  let list = byApp
+    .map { ["bundleId": $0.key, "name": $0.value.name, "playing": $0.value.playing] as [String: Any] }
+    .sorted { a, b in
+      let (pa, pb) = (a["playing"] as! Bool, b["playing"] as! Bool)
+      return pa != pb ? pa : (a["name"] as! String).localizedCaseInsensitiveCompare(b["name"] as! String) == .orderedAscending
+    }
+  if let data = try? JSONSerialization.data(withJSONObject: list), let text = String(data: data, encoding: .utf8) { print(text) }
+  exit(0)
+}
+
+let arguments = Array(CommandLine.arguments.dropFirst())
+if arguments.first == "list" { listApps() }
+guard let outPath = arguments.first else { fail("usage: mova-audio-tap list | mova-audio-tap <out.wav> [--app <bundleId>]") }
+let outURL = URL(fileURLWithPath: outPath)
+var onlyApp: String?
+if let flag = arguments.firstIndex(of: "--app"), flag + 1 < arguments.count { onlyApp = arguments[flag + 1] }
+
+// A private, unmuted tap on everything the system plays — or only on the
+// chosen app's processes.
+let tapDescription: CATapDescription
+if let appId = onlyApp {
+  let objects = audioProcesses()
+    .filter { $0.bundleId == appId || $0.bundleId.hasPrefix(appId + ".") }
+    .map(\.object)
+  if objects.isEmpty { fail("That app isn't using audio yet — start the call first, then record.") }
+  tapDescription = CATapDescription(stereoMixdownOfProcesses: objects)
+} else {
+  tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+}
 tapDescription.uuid = UUID()
 tapDescription.muteBehavior = .unmuted
 tapDescription.isPrivate = true
