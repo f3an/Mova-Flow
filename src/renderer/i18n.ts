@@ -12,7 +12,18 @@ const UK: Record<string, string> = {
   'nav.upload': 'Завантаження',
   'nav.history': 'Історія',
   'nav.server': 'Сервер',
-  'lang.switch.label': 'Мова',
+  'lang.switch.label': 'Мова інтерфейсу',
+  'nav.record': 'Запис',
+  'nav.settings': 'Налаштування',
+  'record.title': 'Запис дзвінка',
+  'settings.title': 'Налаштування',
+  'settings.recording': 'Запис',
+  'settings.language': 'Мова',
+  'settings.language.busy': 'Мову не можна змінити, поки йде запис дзвінка.',
+  'settings.updates': 'Оновлення',
+  'rec.mic.hint': 'Цим мікрофоном записується твоя сторона дзвінка у вкладці «Запис».',
+  'rec.mic.change': 'змінити',
+  'rec.mic.headset': '— навушники перейдуть у режим гарнітури',
 
   'banner.checking': 'Перевірка компонентів розпізнавання...',
   'banner.installing': 'Встановлення компонентів розпізнавання...',
@@ -35,6 +46,11 @@ const UK: Record<string, string> = {
   'picker.playing': 'грає',
   'picker.noThumbs':
     'Щоб бачити мініатюри вікон, дозволь Mova Flow у Системних параметрах → Приватність і безпека → Запис екрана та системного аудіо. Запис працює так само й без них.',
+  'rec.mic': 'Мікрофон',
+  'rec.mic.default': 'Системний за замовчуванням',
+  'rec.mic.defaultNamed': 'Системний за замовчуванням ({name})',
+  'rec.mic.bluetooth':
+    'Bluetooth-мікрофон перемикає навушники в режим гарнітури на час запису — дзвінок у вухах звучатиме гірше. Вбудований мікрофон цього не робить.',
   'rec.me': 'Я',
   'rec.call': 'Дзвінок',
   'rec.hint':

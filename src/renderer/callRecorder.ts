@@ -149,18 +149,25 @@ export class CallRecorder {
   ) {}
 
   /** `appBundleId` (macOS): record only that app's audio instead of
-   * everything the computer plays. Throws with a user-facing message if
-   * either side can't be captured; nothing is left running in that case. */
-  async start(appBundleId?: string): Promise<void> {
+   * everything the computer plays. `micDeviceId`: which microphone records
+   * the user (the system default when omitted, or if that one is gone).
+   * Throws with a user-facing message if either side can't be captured;
+   * nothing is left running in that case. */
+  async start(appBundleId?: string, micDeviceId?: string): Promise<void> {
     this.me = newTrack();
     this.call = newTrack();
     try {
       if (!(await this.api.ensure_microphone_access())) {
         throw new Error('Microphone access was denied. Allow it for Mova Flow in System Settings → Privacy & Security → Microphone.');
       }
-      const mic = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
+      const processing = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+      const mic = await navigator.mediaDevices
+        .getUserMedia({ audio: micDeviceId ? { ...processing, deviceId: { exact: micDeviceId } } : processing })
+        // The chosen mic was unplugged since — record with the default rather than not at all.
+        .catch((err: Error) => {
+          if (micDeviceId && err.name === 'OverconstrainedError') return navigator.mediaDevices.getUserMedia({ audio: processing });
+          throw err;
+        });
       this.streams.push(mic);
       this.ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
       await this.ctx.resume();
