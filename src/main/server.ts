@@ -202,8 +202,18 @@ export class ServerController {
     app.get('/', (_req, res) => res.json({ ok: true }));
 
     // A cheap general limiter on all of /api, plus a stricter one specifically on
-    // /api/auth to slow down secret brute-forcing.
-    app.use('/api', rateLimiter(5 * 60 * 1000, 120));
+    // /api/auth to slow down secret brute-forcing. Reading back a job already
+    // submitted (status polls, the .txt) doesn't count: a client polls every
+    // couple of seconds through a long transcription, and those polls used to
+    // eat the budget until the next upload — a call recording — got a 429.
+    const apiLimiter = rateLimiter(5 * 60 * 1000, 120);
+    app.use('/api', (req, res, next) => {
+      if (req.method === 'GET' && /^\/(status|download)\//.test(req.path)) {
+        next();
+        return;
+      }
+      apiLimiter(req, res, next);
+    });
 
     app.post('/api/auth', rateLimiter(60 * 1000, 5), (req: Request, res: Response) => {
       const secret = typeof req.body?.secret === 'string' ? req.body.secret : '';

@@ -37,6 +37,14 @@ contextBridge.exposeInMainWorld('api', {
   get_client_history_text: (id: string) => ipcRenderer.invoke('get-client-history-text', id),
   get_client_history_audio: (id: string) => ipcRenderer.invoke('get-client-history-audio', id),
   delete_client_history_entry: (id: string) => ipcRenderer.invoke('delete-client-history-entry', id),
+  recording_begin: (name: string) => ipcRenderer.invoke('recording-begin', name),
+  recording_append: (id: string, side: string, startedAt: number, pcm: ArrayBuffer) =>
+    ipcRenderer.invoke('recording-append', id, side, startedAt, pcm),
+  recording_finish: (id: string) => ipcRenderer.invoke('recording-finish', id),
+  list_recordings: () => ipcRenderer.invoke('list-recordings'),
+  read_recording: (id: string) => ipcRenderer.invoke('read-recording', id),
+  show_recording: (id: string) => ipcRenderer.invoke('show-recording', id),
+  delete_recording: (id: string) => ipcRenderer.invoke('delete-recording', id),
   get_update_state: () => ipcRenderer.invoke('get-update-state'),
   install_update: () => ipcRenderer.invoke('install-update'),
   download_update: () => ipcRenderer.invoke('download-update'),
@@ -47,12 +55,12 @@ contextBridge.exposeInMainWorld('api', {
   discover_hosts: () => ipcRenderer.invoke('discover-hosts'),
   ensure_microphone_access: () => ipcRenderer.invoke('ensure-microphone-access'),
   system_audio_sources: () => ipcRenderer.invoke('system-audio-sources'),
-  system_audio_start: (appBundleId?: string) => ipcRenderer.invoke('system-audio-start', appBundleId),
+  system_audio_start: (recordingId: string, appBundleId?: string) =>
+    ipcRenderer.invoke('system-audio-start', recordingId, appBundleId),
   set_recording_indicator: (recording: boolean) => ipcRenderer.invoke('set-recording-indicator', recording),
   on_tray_toggle_recording: (callback: () => void) => {
     ipcRenderer.on('tray-toggle-recording', () => callback());
   },
-  system_audio_stop: () => ipcRenderer.invoke('system-audio-stop'),
   on_system_audio_level: (callback: (level: number) => void) => {
     ipcRenderer.on('system-audio-level', (_evt, level: number) => callback(level));
   },

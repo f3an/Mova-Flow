@@ -74,6 +74,13 @@ interface WhisperApi {
   get_client_history_text(id: string): Promise<{ text: string | null }>;
   get_client_history_audio(id: string): Promise<{ data: Uint8Array | null; ext: string | null }>;
   delete_client_history_entry(id: string): Promise<{ ok: boolean }>;
+  recording_begin(name: string): Promise<{ id: string }>;
+  recording_append(id: string, side: 'me' | 'call', startedAt: number, pcm: ArrayBuffer): Promise<void>;
+  recording_finish(id: string): Promise<PendingRecording | null>;
+  list_recordings(): Promise<{ items: PendingRecording[] }>;
+  read_recording(id: string): Promise<{ data: Uint8Array | null; speakerTimeline: string | null }>;
+  show_recording(id: string): Promise<void>;
+  delete_recording(id: string): Promise<{ ok: boolean }>;
   get_update_state(): Promise<UpdateState>;
   install_update(): Promise<void>;
   download_update(): Promise<void>;
@@ -82,12 +89,23 @@ interface WhisperApi {
   discover_hosts(): Promise<{ hosts: DiscoveredHost[] }>;
   ensure_microphone_access(): Promise<boolean>;
   system_audio_sources(): Promise<CaptureSource[]>;
-  system_audio_start(appBundleId?: string): Promise<{ startedAt: number }>;
+  system_audio_start(recordingId: string, appBundleId?: string): Promise<{ startedAt: number }>;
   set_recording_indicator(recording: boolean): Promise<void>;
   on_tray_toggle_recording(callback: () => void): void;
-  system_audio_stop(): Promise<Uint8Array | null>;
   on_system_audio_level(callback: (level: number) => void): void;
   check_for_updates(): Promise<UpdateState>;
+}
+
+/** A call recording saved on this computer and not transcribed yet (see
+ * main/recordings.ts). */
+interface PendingRecording {
+  id: string;
+  name: string;
+  createdAt: number;
+  state: 'recording' | 'ready';
+  interrupted: boolean;
+  size: number;
+  seconds: number;
 }
 
 interface UpdateState {
@@ -279,6 +297,7 @@ async function refreshTranscribeGate(): Promise<void> {
         : t('banner.off', 'Server is off. Go to the Server tab and press Start.');
       el.innerHTML = `<div class="banner">${message}</div>`;
       delete el.dataset.built;
+      if (el.id === 'recordGate') recordUpload = null;
       continue;
     }
     if (el.dataset.built === base) continue; // already built for this exact base
@@ -321,12 +340,30 @@ function buildRecordGate(gate: HTMLDivElement, base: string): void {
     ${LANGUAGE_SELECT('recLang')}
     <div id="recJobs"></div>
   `;
-  const upload = makeUploader(
+  recordUpload = makeUploader(
     base,
     document.getElementById('recJobs') as HTMLDivElement,
     document.getElementById('recLang') as HTMLSelectElement,
   );
-  wireCallRecorder((file) => upload(file, { speakers: 'me-others' }));
+  wireCallRecorder();
+}
+
+/** Uploads into the Record tab's job list; null while that tab shows a
+ * banner instead (server off, host unreachable). */
+let recordUpload: ((file: File, options?: UploadOptions) => Promise<void>) | null = null;
+
+/** Sends a saved recording (see main/recordings.ts) for transcription and
+ * shows its progress on the Record tab. */
+async function transcribeSavedRecording(id: string, name: string): Promise<void> {
+  showTab('record');
+  if (!recordUpload) return; // the tab's banner says why
+  const { data, speakerTimeline } = await window.api.read_recording(id);
+  if (!data) return;
+  void recordUpload(new File([data as BlobPart], name, { type: 'audio/wav' }), {
+    speakers: 'me-others',
+    recordingId: id,
+    speakerTimeline: speakerTimeline ?? undefined,
+  });
 }
 
 // ── Record a call ────────────────────────────────────────────────────────
@@ -399,7 +436,14 @@ micSelect.addEventListener('change', () => {
   updateMicNote();
 });
 
-function wireCallRecorder(upload: (file: File) => void): void {
+/** "2026-10-05 14-01" in the computer's own time zone. */
+function localStamp(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}-${p(d.getMinutes())}`;
+}
+
+function wireCallRecorder(): void {
   const recBtn = document.getElementById('recBtn') as HTMLButtonElement;
   const timer = document.getElementById('recTimer') as HTMLSpanElement;
   const meters = document.getElementById('recMeters') as HTMLDivElement;
@@ -448,9 +492,9 @@ function wireCallRecorder(upload: (file: File) => void): void {
       recBtn.disabled = true;
       recBtn.textContent = t('rec.stopping', 'Stopping...');
       try {
-        const wav = await recorder.stop();
-        const stamp = new Date(startedAt).toISOString().slice(0, 16).replace('T', ' ').replace(':', '-');
-        upload(new File([wav], `Call ${stamp}.wav`, { type: 'audio/wav' }));
+        const saved = await recorder.stop();
+        if (saved) await transcribeSavedRecording(saved.id, saved.name);
+        else showTab('history'); // couldn't be assembled now — History retries
       } finally {
         setIdle();
       }
@@ -475,7 +519,7 @@ function wireCallRecorder(upload: (file: File) => void): void {
     hint.classList.remove('error-text');
     activeCallLevel = (level) => showLevel(meterCall, level);
     try {
-      await recorder.start(source || undefined, micSelect.value || undefined);
+      await recorder.start(`Call ${localStamp(Date.now())}.wav`, source || undefined, micSelect.value || undefined);
     } catch (err) {
       setIdle();
       // IPC errors arrive as "Error invoking remote method '…': Error: <message>".
@@ -621,17 +665,44 @@ function wireTranscribeUI(base: string): void {
   const uploadFile = makeUploader(base, jobsEl, langSelect);
 }
 
+interface UploadOptions {
+  /** A stereo recording with the user on the left channel and the call on
+   * the right — the host labels lines Me / Others. */
+  speakers?: 'me-others';
+  /** The saved call recording this is (see main/recordings.ts): it's kept
+   * until the transcript is in history, so a failed upload never loses it. */
+  recordingId?: string;
+  /** JSON speaker turns (Meet captions, via the extension) — see speaker_timeline in docs/API.md. */
+  speakerTimeline?: string;
+}
+
+// Saved recordings currently being sent or transcribed — History shows them
+// as such instead of offering Transcribe again.
+const recordingsInFlight = new Set<string>();
+
+// A host answering 429 is busy, not broken: wait the limiter window out
+// rather than fail (an upload is the one request that must get through).
+const BUSY_RETRY_MS = 20_000;
+const BUSY_GIVE_UP_MS = 6 * 60_000;
+const POLL_MS = 2_000;
+// Status polls that fail (Wi-Fi blip, host restarting, 429) are retried for
+// this long before the card gives up.
+const POLL_GIVE_UP_MS = 5 * 60_000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /** Uploads a file to `base` for transcription and tracks it as a job card
  * in `jobsEl` until the transcript is in. Shared by Upload (files) and Record
- * (call recordings, with speakers=me-others). */
+ * (call recordings, with speakers=me-others). Any failure leaves a Retry
+ * button on the card. */
 function makeUploader(
   base: string,
   jobsEl: HTMLDivElement,
   langSelect: HTMLSelectElement,
-): (file: File, options?: { speakers?: 'me-others' }) => Promise<void> {
+): (file: File, options?: UploadOptions) => Promise<void> {
   return uploadFile;
 
-  function createJobCard(filename: string): HTMLDivElement {
+  function createJobCard(filename: string, before?: HTMLDivElement): HTMLDivElement {
     const card = document.createElement('div');
     card.className = 'job';
     card.innerHTML = `
@@ -642,31 +713,45 @@ function makeUploader(
       <div class="bar-track"><div class="bar-fill"></div></div>
       <div class="progress-text">${t('job.uploading', 'Uploading file...')}</div>
     `;
-    jobsEl.prepend(card);
+    if (before) before.replaceWith(card);
+    else jobsEl.prepend(card);
     return card;
   }
 
-  function renderError(card: HTMLDivElement, message: string): void {
+  function renderError(card: HTMLDivElement, message: string, file: File, options: UploadOptions): void {
+    if (options.recordingId) recordingsInFlight.delete(options.recordingId);
     const statusEl = card.querySelector('.job-status') as HTMLDivElement;
     statusEl.textContent = t('job.error', 'Error');
     statusEl.className = 'job-status status-error';
     card.querySelector('.bar-track')?.remove();
     const progressEl = card.querySelector('.progress-text');
-    if (progressEl) progressEl.outerHTML = `<div class="error-text">${escapeHtml(message)}</div>`;
+    const saved = options.recordingId
+      ? `<div class="job-saved">${t('job.savedRecording', 'The recording is saved — it waits in History until it is transcribed.')}</div>`
+      : '';
+    const html = `<div class="error-text">${escapeHtml(message)}</div>${saved}
+      <div class="actions">
+        <button class="action" data-act="retry">${t('job.retry', 'Try again')}</button>
+        ${options.recordingId ? `<button class="action secondary" data-act="show">${t('job.showFile', 'Show file')}</button>` : ''}
+      </div>`;
+    if (progressEl) progressEl.outerHTML = html;
+    else card.insertAdjacentHTML('beforeend', html);
+    card.querySelector('[data-act="retry"]')?.addEventListener('click', () => void uploadFile(file, options, card));
+    card.querySelector('[data-act="show"]')?.addEventListener('click', () => {
+      if (options.recordingId) void window.api.show_recording(options.recordingId);
+    });
   }
 
-  /** `speakers: 'me-others'`: a stereo recording with the user on the left
-   * channel and the call on the right — the host labels lines Me / Others. */
-  async function uploadFile(file: File, options: { speakers?: 'me-others' } = {}): Promise<void> {
-    const jobCard = createJobCard(file.name);
+  async function uploadFile(file: File, options: UploadOptions = {}, replaceCard?: HTMLDivElement): Promise<void> {
+    const jobCard = createJobCard(file.name, replaceCard);
     const progressEl = jobCard.querySelector('.progress-text');
+    if (options.recordingId) recordingsInFlight.add(options.recordingId);
 
     let uploadable: File;
     try {
       if (progressEl) progressEl.textContent = t('job.converting', 'Converting format...');
       uploadable = await prepareFileForUpload(file);
     } catch {
-      renderError(jobCard, t('job.err.decode', 'Could not decode audio in this format.'));
+      renderError(jobCard, t('job.err.decode', 'Could not decode audio in this format.'), file, options);
       return;
     }
 
@@ -674,18 +759,27 @@ function makeUploader(
     formData.append('file', uploadable);
     formData.append('language', langSelect.value);
     if (options.speakers) formData.append('speakers', options.speakers);
+    if (options.speakerTimeline) formData.append('speaker_timeline', options.speakerTimeline);
 
     try {
-      if (progressEl) progressEl.textContent = t('job.uploading', 'Uploading file...');
-      const res = await authorizedFetch(base, '/api/transcribe', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (data.error) {
-        renderError(jobCard, data.error);
+      for (let waited = 0; ; waited += BUSY_RETRY_MS) {
+        if (progressEl) progressEl.textContent = t('job.uploading', 'Uploading file...');
+        const res = await authorizedFetch(base, '/api/transcribe', { method: 'POST', body: formData });
+        if (res.status === 429 && waited < BUSY_GIVE_UP_MS) {
+          if (progressEl) progressEl.textContent = t('job.busyRetry', 'The server is busy — trying again shortly...');
+          await sleep(BUSY_RETRY_MS);
+          continue;
+        }
+        const data = await res.json();
+        if (data.error) {
+          renderError(jobCard, data.error, file, options);
+          return;
+        }
+        pollStatus(data.job_id, jobCard, file, options);
         return;
       }
-      pollStatus(data.job_id, jobCard, file);
     } catch {
-      renderError(jobCard, t('job.err.unreachable', 'Could not reach the server.'));
+      renderError(jobCard, t('job.err.unreachable', 'Could not reach the server.'), file, options);
     }
   }
 
@@ -703,57 +797,83 @@ function makeUploader(
     await window.api.save_client_history_entry(file.name, language, ext, audioBytes, text);
   }
 
-  function pollStatus(jobId: string, card: HTMLDivElement, originalFile: File): void {
-    const interval = setInterval(async () => {
+  /** The recording is in history now (the host keeps its own copy; a client
+   * just saved one) — the safety copy can go. */
+  async function finishSaved(file: File, language: string, text: string, options: UploadOptions): Promise<void> {
+    try {
+      await saveToClientHistory(file, language, text);
+    } catch {
+      return; // not in history — keep the safety copy
+    }
+    if (options.recordingId) {
+      recordingsInFlight.delete(options.recordingId);
+      await window.api.delete_recording(options.recordingId);
+    }
+  }
+
+  function pollStatus(jobId: string, card: HTMLDivElement, originalFile: File, options: UploadOptions): void {
+    let failingSince = 0;
+    const statusEl = card.querySelector('.job-status') as HTMLDivElement;
+    const progressEl = card.querySelector('.progress-text');
+
+    const tick = async (): Promise<void> => {
+      let data: { status?: string; progress?: string; result?: string; detectedLanguage?: string; error?: string };
       try {
         const res = await authorizedFetch(base, `/api/status/${jobId}`);
-        const data = await res.json();
-
-        if (data.error) {
-          clearInterval(interval);
-          renderError(card, data.error);
+        // Busy or briefly unreachable: keep asking. 404 is final — the host
+        // restarted and forgot the job.
+        if (res.status === 429 || res.status >= 500) throw new Error(String(res.status));
+        data = await res.json();
+      } catch {
+        if (!failingSince) failingSince = Date.now();
+        if (Date.now() - failingSince > POLL_GIVE_UP_MS) {
+          renderError(card, t('job.err.lostConnection', 'Lost connection to the server'), originalFile, options);
           return;
         }
-
-        const statusEl = card.querySelector('.job-status') as HTMLDivElement;
-        const progressEl = card.querySelector('.progress-text');
-
-        if (data.status === 'processing') {
-          statusEl.textContent = t('job.processing', 'Processing');
-          statusEl.className = 'job-status status-processing';
-          if (progressEl) progressEl.textContent = data.progress || '...';
-        }
-
-        if (data.status === 'done') {
-          clearInterval(interval);
-          statusEl.textContent = t('job.done', 'Done');
-          statusEl.className = 'job-status status-done';
-          card.querySelector('.bar-track')?.remove();
-
-          const box = document.createElement('div');
-          box.className = 'transcript-box';
-          box.innerHTML = `
-            <div class="transcript-text">${escapeHtml(data.result)}</div>
-            <div class="actions">
-              <button class="action" id="copyBtn">${t('job.copy', 'Copy')}</button>
-              <button class="action secondary" id="downloadBtn">${t('job.download', 'Download .txt')}</button>
-            </div>
-          `;
-          progressEl?.replaceWith(box);
-          box.querySelector('#copyBtn')?.addEventListener('click', (e) => copyText(e.currentTarget as HTMLButtonElement));
-          box.querySelector('#downloadBtn')?.addEventListener('click', () => downloadTranscript(base, jobId));
-          void saveToClientHistory(originalFile, data.detectedLanguage || 'auto', data.result);
-        }
-
-        if (data.status === 'error') {
-          clearInterval(interval);
-          renderError(card, data.error || t('job.err.unknown', 'Unknown error'));
-        }
-      } catch {
-        clearInterval(interval);
-        renderError(card, t('job.err.lostConnection', 'Lost connection to the server'));
+        setTimeout(tick, POLL_MS);
+        return;
       }
-    }, 1500);
+      failingSince = 0;
+
+      if (data.error && data.status !== 'error') {
+        renderError(card, data.error, originalFile, options);
+        return;
+      }
+
+      if (data.status === 'processing') {
+        statusEl.textContent = t('job.processing', 'Processing');
+        statusEl.className = 'job-status status-processing';
+        if (progressEl) progressEl.textContent = data.progress || '...';
+      }
+
+      if (data.status === 'done') {
+        statusEl.textContent = t('job.done', 'Done');
+        statusEl.className = 'job-status status-done';
+        card.querySelector('.bar-track')?.remove();
+
+        const box = document.createElement('div');
+        box.className = 'transcript-box';
+        box.innerHTML = `
+          <div class="transcript-text">${escapeHtml(data.result || '')}</div>
+          <div class="actions">
+            <button class="action" id="copyBtn">${t('job.copy', 'Copy')}</button>
+            <button class="action secondary" id="downloadBtn">${t('job.download', 'Download .txt')}</button>
+          </div>
+        `;
+        progressEl?.replaceWith(box);
+        box.querySelector('#copyBtn')?.addEventListener('click', (e) => copyText(e.currentTarget as HTMLButtonElement));
+        box.querySelector('#downloadBtn')?.addEventListener('click', () => downloadTranscript(base, jobId));
+        void finishSaved(originalFile, data.detectedLanguage || 'auto', data.result || '', options);
+        return;
+      }
+
+      if (data.status === 'error') {
+        renderError(card, data.error || t('job.err.unknown', 'Unknown error'), originalFile, options);
+        return;
+      }
+      setTimeout(tick, POLL_MS);
+    };
+    setTimeout(tick, POLL_MS);
   }
 }
 
@@ -878,13 +998,26 @@ async function refreshHistoryTab(): Promise<void> {
   const gate = document.getElementById('historyGate') as HTMLDivElement;
   const state = await window.api.get_state();
 
+  // Recordings still waiting for a transcript come first, and show up even
+  // with the server off — they live on this computer, not on the host.
+  let pending: PendingRecording[] = [];
+  try {
+    pending = (await window.api.list_recordings()).items;
+  } catch {
+    // listed next time
+  }
+  const show = (html: string) => {
+    gate.innerHTML = pending.map(pendingCardHtml).join('') + html;
+    gate.querySelectorAll<HTMLDivElement>('.job[data-recording]').forEach((card) => wirePendingCard(card));
+  };
+
   let backend: HistoryBackend;
   if (state.role === 'client') {
     backend = clientHistoryBackend();
   } else {
     const base = serverBaseUrl(state);
     if (base === null) {
-      gate.innerHTML = `<div class="banner">${t('banner.off', 'Server is off. Go to the Server tab and press Start.')}</div>`;
+      show(`<div class="banner">${t('banner.off', 'Server is off. Go to the Server tab and press Start.')}</div>`);
       return;
     }
     backend = hostHistoryBackend(base);
@@ -894,17 +1027,86 @@ async function refreshHistoryTab(): Promise<void> {
   try {
     items = await backend.list();
   } catch {
-    gate.innerHTML = `<div class="banner">${t('job.err.unreachable', 'Could not reach the server.')}</div>`;
+    show(`<div class="banner">${t('job.err.unreachable', 'Could not reach the server.')}</div>`);
     return;
   }
 
   if (items.length === 0) {
-    gate.innerHTML = `<div class="banner">${t('history.empty', 'No transcriptions yet.')}</div>`;
+    show(pending.length ? '' : `<div class="banner">${t('history.empty', 'No transcriptions yet.')}</div>`);
     return;
   }
 
-  gate.innerHTML = items.map((item) => historyCardHtml(item)).join('');
-  gate.querySelectorAll<HTMLDivElement>('.job').forEach((card) => wireHistoryCard(card, backend));
+  show(items.map((item) => historyCardHtml(item)).join(''));
+  gate.querySelectorAll<HTMLDivElement>('.job:not([data-recording])').forEach((card) => wireHistoryCard(card, backend));
+}
+
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = String(seconds % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+function pendingCardHtml(rec: PendingRecording): string {
+  const recording = rec.state === 'recording';
+  const sending = recordingsInFlight.has(rec.id);
+  const status = recording
+    ? `<div class="job-status status-error">● ${t('history.pending.recording', 'Recording')}</div>`
+    : `<div class="job-status status-queued">${
+        sending ? t('history.pending.sending', 'Transcribing...') : t('history.pending.notYet', 'Not transcribed')
+      }</div>`;
+  const notes = [
+    new Date(rec.createdAt).toLocaleString(),
+    recording ? '' : formatDuration(rec.seconds),
+    rec.interrupted ? t('history.pending.interrupted', 'recovered after the app closed mid-recording') : '',
+  ].filter(Boolean);
+  return `
+    <div class="job" data-recording="${rec.id}" data-name="${escapeHtml(rec.name)}">
+      <div class="job-head">
+        <div class="job-name">${escapeHtml(rec.name)}</div>
+        ${status}
+      </div>
+      <div class="progress-text">${escapeHtml(notes.join(' · '))}</div>
+      <div class="history-audio"></div>
+      ${
+        recording
+          ? ''
+          : `<div class="actions">
+        <button class="action" data-action="transcribe"${sending ? ' disabled' : ''}>${t('rec.pending.send', 'Transcribe')}</button>
+        <button class="action secondary" data-action="play">${t('history.play', 'Play')}</button>
+        <button class="action secondary" data-action="show">${t('job.showFile', 'Show file')}</button>
+        <button class="action danger" data-action="delete"${sending ? ' disabled' : ''}>${t('history.delete', 'Delete')}</button>
+      </div>`
+      }
+    </div>
+  `;
+}
+
+function wirePendingCard(card: HTMLDivElement): void {
+  const id = card.dataset.recording!;
+  const name = card.dataset.name!;
+  const audioSlot = card.querySelector('.history-audio') as HTMLDivElement;
+  card.querySelector('[data-action="transcribe"]')?.addEventListener('click', () => void transcribeSavedRecording(id, name));
+  card.querySelector('[data-action="show"]')?.addEventListener('click', () => void window.api.show_recording(id));
+  const playBtn = card.querySelector('[data-action="play"]') as HTMLButtonElement | null;
+  playBtn?.addEventListener('click', async () => {
+    playBtn.disabled = true;
+    const { data } = await window.api.read_recording(id);
+    if (!data) {
+      playBtn.disabled = false;
+      return;
+    }
+    buildAudioPlayer(audioSlot, URL.createObjectURL(new Blob([data as BlobPart], { type: 'audio/wav' })));
+    playBtn.remove();
+  });
+  const deleteBtn = card.querySelector('[data-action="delete"]') as HTMLButtonElement | null;
+  deleteBtn?.addEventListener('click', async () => {
+    const ok = confirm(t('history.pending.deleteConfirm', 'Delete this recording? It has not been transcribed, and this cannot be undone.'));
+    if (!ok) return;
+    deleteBtn.disabled = true;
+    await window.api.delete_recording(id);
+    card.remove();
+  });
 }
 
 function historyCardHtml(item: HistoryItem): string {

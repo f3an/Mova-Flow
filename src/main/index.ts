@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, IpcMainInvokeEvent, nativeImage, net } from 'electron';
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, IpcMainInvokeEvent, nativeImage, net, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { autoUpdater } from 'electron-updater';
@@ -23,6 +23,19 @@ import {
   getClientHistoryText,
 } from './clientHistory';
 import { startExtensionBridge } from './localBridge';
+import {
+  activeRecording,
+  appendRecording,
+  beginRecording,
+  deleteRecording,
+  finishRecording,
+  listRecordings,
+  macCallWavPath,
+  readRecording,
+  recordingPath,
+  setSideStart,
+  Side,
+} from './recordings';
 
 type UiLang = 'en' | 'uk';
 
@@ -312,6 +325,7 @@ function createWindow(): void {
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });
+  win.webContents.on('render-process-gone', () => void finishActiveRecording());
   win.on('close', (event) => {
     if (isQuitting) return;
     event.preventDefault();
@@ -503,6 +517,55 @@ ipcMain.handle('delete-client-history-entry', (_evt: IpcMainInvokeEvent, id: str
   ok: deleteClientHistoryEntry(app.getPath('userData'), id),
 }));
 
+// Call recordings on disk — see recordings.ts.
+ipcMain.handle('recording-begin', async (_evt: IpcMainInvokeEvent, name: string) => {
+  // One left running by a renderer that reloaded or crashed: keep what it got.
+  await finishActiveRecording();
+  return { id: beginRecording(app.getPath('userData'), name) };
+});
+
+ipcMain.handle(
+  'recording-append',
+  (_evt: IpcMainInvokeEvent, id: string, side: Side, startedAt: number, pcm: ArrayBuffer) => {
+    appendRecording(app.getPath('userData'), id, side, startedAt, Buffer.from(pcm));
+  },
+);
+
+ipcMain.handle('recording-finish', async (_evt: IpcMainInvokeEvent, id: string) => {
+  if (id === activeRecording()) await stopMacSystemAudio();
+  return finishRecording(app.getPath('userData'), id);
+});
+
+ipcMain.handle('list-recordings', () => ({ items: listRecordings(app.getPath('userData')) }));
+
+ipcMain.handle('read-recording', (_evt: IpcMainInvokeEvent, id: string) => {
+  const saved = readRecording(app.getPath('userData'), id);
+  return { data: saved?.data ?? null, speakerTimeline: saved?.speakerTimeline ?? null };
+});
+
+ipcMain.handle('show-recording', (_evt: IpcMainInvokeEvent, id: string) => {
+  const file = recordingPath(app.getPath('userData'), id);
+  if (file) shell.showItemInFolder(file);
+});
+
+ipcMain.handle('delete-recording', async (_evt: IpcMainInvokeEvent, id: string) => {
+  if (id === activeRecording()) await stopMacSystemAudio();
+  return { ok: deleteRecording(app.getPath('userData'), id) };
+});
+
+/** Stops and assembles the recording in progress, if any — on quit, or when
+ * the window that was making it is gone. */
+async function finishActiveRecording(): Promise<void> {
+  const id = activeRecording();
+  if (!id) return;
+  await stopMacSystemAudio();
+  try {
+    finishRecording(app.getPath('userData'), id, true);
+  } catch {
+    // The parts stay on disk; the next listRecordings() tries again.
+  }
+}
+
 ipcMain.handle('get-update-state', () => updateState);
 
 ipcMain.handle('download-update', () => {
@@ -547,12 +610,18 @@ ipcMain.handle('discover-hosts', async () => ({ hosts: await discoverHosts() }))
 // system-audio helper.
 ipcMain.handle('ensure-microphone-access', () => ensureMicrophoneAccess());
 ipcMain.handle('system-audio-sources', () => listCaptureSources());
-ipcMain.handle('system-audio-start', async (evt: IpcMainInvokeEvent, appBundleId?: string) => {
-  const win = BrowserWindow.fromWebContents(evt.sender);
-  if (!win) throw new Error('No window');
-  return startMacSystemAudio(win, appBundleId || undefined);
-});
-ipcMain.handle('system-audio-stop', () => stopMacSystemAudio());
+ipcMain.handle(
+  'system-audio-start',
+  async (evt: IpcMainInvokeEvent, recordingId: string, appBundleId?: string) => {
+    const win = BrowserWindow.fromWebContents(evt.sender);
+    if (!win) throw new Error('No window');
+    if (recordingId !== activeRecording()) throw new Error('No recording in progress.');
+    const userData = app.getPath('userData');
+    const started = await startMacSystemAudio(win, macCallWavPath(userData, recordingId), appBundleId || undefined);
+    setSideStart(userData, recordingId, 'call', started.startedAt);
+    return started;
+  },
+);
 
 // While a call is being recorded, say so outside the window too — it often
 // sits hidden in the tray for the whole call: a dot on the Dock icon (macOS),
@@ -604,8 +673,17 @@ app.whenReady().then(() => {
 // Fires before any window's own 'close' event, on both a tray "Exit" click
 // and macOS's Cmd+Q — marks this as a real quit so the close handler in
 // createWindow() lets the window actually close instead of just hiding it.
-app.on('before-quit', () => {
+// Quitting mid-call finishes the recording first (it then waits in History
+// with a Transcribe button) — the quit resumes once it's on disk.
+let quitAfterRecording = false;
+app.on('before-quit', (event) => {
   isQuitting = true;
+  if (activeRecording() && !quitAfterRecording) {
+    event.preventDefault();
+    quitAfterRecording = true;
+    void finishActiveRecording().finally(() => app.quit());
+    return;
+  }
   abortSystemAudio();
 });
 

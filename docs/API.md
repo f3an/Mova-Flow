@@ -5,7 +5,7 @@ Reference for the endpoints `server.ts` exposes on the host (typically `http://<
 Ground rules for every route:
 
 - CORS is wide open (`Access-Control-Allow-Origin: *`) — the renderer always loads from `file://`, so every `fetch()` is cross-origin; the preflight (`OPTIONS`) request is handled explicitly.
-- `/api/*` is capped at 120 requests per 5 minutes per IP; `/api/auth` has its own, stricter limit of 5 requests per minute per IP.
+- `/api/*` is capped at 120 requests per 5 minutes per IP; `/api/auth` has its own, stricter limit of 5 requests per minute per IP. Reading back a submitted job (`GET /api/status/:id`, `GET /api/download/:id`) doesn't count towards the cap — a client polls through long transcriptions, and those polls must not leave the next upload with a `429`. The client retries an upload that gets a `429` for up to 6 minutes before giving up.
 - Errors come back as `{ "error": "..." }` with the matching HTTP status.
 
 ## `GET /`
@@ -149,4 +149,4 @@ Deletes the entry and its files (`audio/<id><ext>`, `transcripts/<id>.txt`).
 | `401` | missing/wrong secret (`/api/auth`), missing/invalid/expired token (everything else) |
 | `403` | a request to `/api/history*` came from somewhere other than `127.0.0.1` |
 | `404` | job/transcript/audio/history entry not found, or `id` failed the `^[a-f0-9]{1,32}$` format check |
-| `429` | rate limit exceeded (120/5min on `/api`, 5/min on `/api/auth`) |
+| `429` | rate limit exceeded (120/5min on `/api` excluding status/download reads, 5/min on `/api/auth`) |

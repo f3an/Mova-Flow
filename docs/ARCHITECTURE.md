@@ -118,7 +118,7 @@ sequenceDiagram
 - **Short-lived bearer tokens.** `POST /api/auth` exchanges the secret for an HS256 token (`auth.ts`, a minimal hand-rolled implementation with no external library) with a 12-hour TTL. Every subsequent request (`/api/transcribe`, `/api/status/:id`, `/api/download/:id`) requires an `Authorization: Bearer <token>` header, checked by `requireAuth`.
 - **Timing-safe comparisons.** Both the secret check and the token signature check go through `timingSafeEqualStr` (`crypto.timingSafeEqual` with a length pre-check) so the secret can't be recovered via a timing attack.
 - **History is loopback-only, regardless of the token.** `requireLocal` in `server.ts` returns `403` for any request whose IP isn't `127.0.0.1`/`::1` — even with a valid bearer token. That means the host's history is physically unreachable from the network, by anyone but the host itself.
-- **In-memory rate limiting.** A simple fixed-window counter (`rateLimit.ts`), with a stricter limit specifically on `/api/auth` (5 attempts/minute per IP) to slow down secret brute-forcing.
+- **In-memory rate limiting.** A simple fixed-window counter (`rateLimit.ts`), with a stricter limit specifically on `/api/auth` (5 attempts/minute per IP) to slow down secret brute-forcing. Status polls and transcript downloads are exempt from the general `/api` cap, so polling a long job can't starve the next upload.
 - **Network exposure is opt-in.** The server binds to `127.0.0.1` by default; binding to `0.0.0.0` (and thus being reachable on the LAN) only happens when "Expose to local network" is explicitly turned on, on the Server tab.
 
 ## On-disk data
@@ -138,6 +138,8 @@ userData/
   history.json                the host's local job list (newest first)
   client-history.json          the client's own history (client role)
   client-audio/, client-transcripts/   the client history's audio and text
+  recordings/<id>/             a call recording until its transcript is in history: meta.json, the
+                               sides as they're recorded (me.pcm, call.pcm|call.wav), then recording.wav
 ```
 
 Record IDs are 12-character hex strings (`randomUUID().replace(/-/g,'').slice(0,12)`); every filesystem path built from a user-supplied ID is checked against `^[a-f0-9]{1,32}$` before it's used.
@@ -179,6 +181,8 @@ The Upload tab's **Record a call** captures both sides of a call made in any app
   - **macOS:** Electron's loopback is Windows-only, so a small Swift helper, `native/macos/audio-tap` (built by `npm run build:native`, bundled as `Resources/bin/mova-audio-tap`), records it through a Core Audio **process tap** (macOS 14.2+). It needs only the "System Audio Recording" permission, writes 16 kHz mono WAV, pads the gaps a tap leaves when nothing is playing so the file stays in step with the mic, and reports levels for the UI meter as JSON lines on stdout. `mova-audio-tap list` reports which apps have audio streams (helper processes such as Chrome's audio service are attributed to their app), so the user can record **only one app** — e.g. just Zoom — instead of everything; Windows loopback can only take the whole mix. On macOS, Record opens a picker (`src/renderer/sourcePicker.ts`) of cards with a thumbnail of each app's largest window — taken by the helper itself (`mova-audio-tap thumbs`, ScreenCaptureKit), because Electron's `desktopCapturer` only sees windows on the current Space. Thumbnails need the Screen Recording permission — only for these previews, nothing is recorded with it; without it the cards show app icons and recording works the same.
 - While recording, the app shows it outside the window too: a **●** badge on the Dock icon (macOS), a red overlay on the taskbar button (Windows), and the tray tooltip / menu-bar title.
 - On stop, both sides are aligned by their start timestamps into one stereo WAV and uploaded with `speakers=me-others`, so the host labels each line **Me** / **Others** (`whisper-cli --diarize`).
+- A recording exists only once, so it never waits in memory: from the first second, both sides are appended to `recordings/<id>/` in userData (`src/main/recordings.ts`) — the mic from the renderer once a second, the macOS call side by the helper directly — and Stop assembles them into `recording.wav`. If the app quits, crashes or the Mac loses power mid-call, what was written is assembled on the next launch (marked as recovered). Until its transcript is in history, the recording sits at the top of **History** as "Not transcribed" with **Transcribe** / Play / Show file / Delete — including with the server off. An upload answered with `429` (host busy) is retried automatically for up to 6 minutes, status polls ride out errors for 5 minutes, and a failed job keeps **Try again** / **Show file** on its card.
+- The Meet extension does the same through the app's local bridge (`src/main/localBridge.ts`, `127.0.0.1:5057`, extension origins only): `POST /extension/recording` hands over the WAV (and the caption timeline) before the upload, so it waits in History too; `POST /extension/history` with its `recording_id` files the transcript and clears it.
 
 ## Platform constraints
 
