@@ -5,3 +5,5 @@ _verify/
 *.log
 .playwright-mcp/
 .DS_Store
+# Built by scripts/build-native.mjs
+build/bin/

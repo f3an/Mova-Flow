@@ -169,6 +169,16 @@ Record IDs are 12-character hex strings (`randomUUID().replace(/-/g,'').slice(0,
 
 The `build.publish` block in `package.json` is what makes electron-builder generate `app-update.yml`/`latest*.yml` in the first place; `npm run dist` still passes `--publish never` so electron-builder never uploads anything itself — that stays the job of `release.yml`'s own `softprops/action-gh-release` step.
 
+## Recording a call
+
+The Upload tab's **Record a call** captures both sides of a call made in any app (Zoom, Teams, Telegram…) — the counterpart of the Meet extension for everything that isn't Google Meet in a browser (`src/renderer/callRecorder.ts`).
+
+- **Microphone** → left channel, recorded in the renderer straight to 16 kHz PCM.
+- **System audio** (what the computer plays — the other side of the call) → right channel:
+  - **Windows:** Electron's own loopback — the renderer calls `getDisplayMedia`, and `setDisplayMediaRequestHandler` in `src/main/systemAudio.ts` answers with `audio: 'loopback'` (no picker; the video track is dropped).
+  - **macOS:** Electron's loopback is Windows-only, so a small Swift helper, `native/macos/audio-tap` (built by `npm run build:native`, bundled as `Resources/bin/mova-audio-tap`), records it through a Core Audio **process tap** (macOS 14.2+). It needs only the "System Audio Recording" permission, writes 16 kHz mono WAV, pads the gaps a tap leaves when nothing is playing so the file stays in step with the mic, and reports levels for the UI meter as JSON lines on stdout.
+- On stop, both sides are aligned by their start timestamps into one stereo WAV and uploaded with `speakers=me-others`, so the host labels each line **Me** / **Others** (`whisper-cli --diarize`).
+
 ## Platform constraints
 
 The **"Server (host)"** role runs on Windows and macOS (Apple Silicon):

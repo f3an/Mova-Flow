@@ -5,6 +5,13 @@ import { autoUpdater } from 'electron-updater';
 import { controller } from './server';
 import { startAdvertising, stopAdvertising, discoverHosts } from './discovery';
 import { lanIPv4 } from './lanAddress';
+import {
+  abortSystemAudio,
+  ensureMicrophoneAccess,
+  initSystemAudioCapture,
+  startMacSystemAudio,
+  stopMacSystemAudio,
+} from './systemAudio';
 import { ensureEngine, modelPath, DEFAULT_MODEL_PRESET, ModelChoice, ModelPreset } from './engine';
 import { generateSecret, issueToken } from './auth';
 import {
@@ -513,6 +520,17 @@ ipcMain.handle('check-for-updates', async () => {
 
 ipcMain.handle('discover-hosts', async () => ({ hosts: await discoverHosts() }));
 
+// "Record a call" — see systemAudio.ts. The renderer records the microphone
+// itself; these cover what it can't: the macOS mic prompt and, on macOS, the
+// system-audio helper.
+ipcMain.handle('ensure-microphone-access', () => ensureMicrophoneAccess());
+ipcMain.handle('system-audio-start', async (evt: IpcMainInvokeEvent) => {
+  const win = BrowserWindow.fromWebContents(evt.sender);
+  if (!win) throw new Error('No window');
+  return startMacSystemAudio(win);
+});
+ipcMain.handle('system-audio-stop', () => stopMacSystemAudio());
+
 // The window hides to the tray instead of closing, so launching the app again
 // from a shortcut while it's "closed" would otherwise start a second copy —
 // with its own server fighting the first one for the port. Only the first
@@ -533,6 +551,7 @@ app.whenReady().then(() => {
   createTray();
   initAutoUpdater();
   startExtensionBridge(app.getPath('userData'));
+  initSystemAudioCapture();
   // Only auto-start on a machine that has already been set up (config.json
   // exists) — a fresh install must not silently kick off a multi-GB model
   // download before the user has even seen the Server tab and chosen a role.
@@ -548,6 +567,7 @@ app.whenReady().then(() => {
 // createWindow() lets the window actually close instead of just hiding it.
 app.on('before-quit', () => {
   isQuitting = true;
+  abortSystemAudio();
 });
 
 app.on('window-all-closed', () => {

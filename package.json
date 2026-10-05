@@ -9,7 +9,8 @@
     "build:renderer": "esbuild src/renderer/renderer.ts --bundle --platform=browser --format=iife --outfile=dist/renderer/renderer.js && node -e \"require('fs').mkdirSync('dist/renderer',{recursive:true});require('fs').copyFileSync('src/renderer/index.html','dist/renderer/index.html');require('fs').copyFileSync('src/renderer/style.css','dist/renderer/style.css')\"",
     "build": "npm run build:main && npm run build:renderer",
     "dev": "npm run build && electron .",
-    "dist": "npm run build && electron-builder --publish never"
+    "dist": "npm run build && npm run build:native && electron-builder --publish never",
+    "build:native": "node scripts/build-native.mjs"
   },
   "keywords": [],
   "author": "",
@@ -54,8 +55,18 @@
         "NSLocalNetworkUsageDescription": "Mova Flow connects to other Mova Flow hosts on your local network to send audio for transcription, and discovers them automatically via Bonjour.",
         "NSBonjourServices": [
           "_mova-flow._tcp"
-        ]
-      }
+        ],
+        "NSMicrophoneUsageDescription": "Mova Flow records your microphone when you record a call, so your side of the conversation can be transcribed.",
+        "NSAudioCaptureUsageDescription": "Mova Flow records the call audio playing on this Mac when you record a call, so the other side of the conversation can be transcribed."
+      },
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extraResources": [
+        {
+          "from": "build/bin/mova-audio-tap",
+          "to": "bin/mova-audio-tap"
+        }
+      ]
     },
     "dmg": {
       "artifactName": "Mova-Flow-${version}.${ext}",
