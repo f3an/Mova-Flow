@@ -383,6 +383,19 @@ body {
   gap: 14px;
 }
 
+.rec-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #6b6858;
+}
+
+.rec-source select {
+  max-width: 220px;
+}
+
 .rec-timer {
   font-family: var(--mono);
   font-size: 14px;

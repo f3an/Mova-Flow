@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, IpcMainInvokeEvent, net } from 'electron';
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, IpcMainInvokeEvent, nativeImage, net } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { autoUpdater } from 'electron-updater';
@@ -9,6 +9,7 @@ import {
   abortSystemAudio,
   ensureMicrophoneAccess,
   initSystemAudioCapture,
+  listMacAudioApps,
   startMacSystemAudio,
   stopMacSystemAudio,
 } from './systemAudio';
@@ -524,12 +525,27 @@ ipcMain.handle('discover-hosts', async () => ({ hosts: await discoverHosts() }))
 // itself; these cover what it can't: the macOS mic prompt and, on macOS, the
 // system-audio helper.
 ipcMain.handle('ensure-microphone-access', () => ensureMicrophoneAccess());
-ipcMain.handle('system-audio-start', async (evt: IpcMainInvokeEvent) => {
+ipcMain.handle('system-audio-sources', () => listMacAudioApps());
+ipcMain.handle('system-audio-start', async (evt: IpcMainInvokeEvent, appBundleId?: string) => {
   const win = BrowserWindow.fromWebContents(evt.sender);
   if (!win) throw new Error('No window');
-  return startMacSystemAudio(win);
+  return startMacSystemAudio(win, appBundleId || undefined);
 });
 ipcMain.handle('system-audio-stop', () => stopMacSystemAudio());
+
+// While a call is being recorded, say so outside the window too — it often
+// sits hidden in the tray for the whole call: a dot on the Dock icon (macOS),
+// a red overlay on the taskbar button (Windows), and the tray icon itself.
+const recordingOverlay = nativeImage.createFromPath(path.join(__dirname, '..', '..', 'build', 'icons', 'recording-overlay.png'));
+ipcMain.handle('set-recording-indicator', (_evt: IpcMainInvokeEvent, recording: boolean) => {
+  if (process.platform === 'darwin') app.dock?.setBadge(recording ? '●' : '');
+  if (process.platform === 'win32') {
+    mainWindow?.setOverlayIcon(recording ? recordingOverlay : null, recording ? 'Recording a call' : '');
+  }
+  tray?.setToolTip(recording ? 'Mova Flow — recording a call' : 'Mova Flow');
+  // Text next to the menu bar icon (macOS only; ignored elsewhere).
+  tray?.setTitle(recording ? ' ● REC' : '');
+});
 
 // The window hides to the tray instead of closing, so launching the app again
 // from a shortcut while it's "closed" would otherwise start a second copy —

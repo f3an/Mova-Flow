@@ -17,7 +17,7 @@ export type Side = 'me' | 'call';
 
 interface CallRecorderApi {
   ensure_microphone_access(): Promise<boolean>;
-  system_audio_start(): Promise<{ startedAt: number }>;
+  system_audio_start(appBundleId?: string): Promise<{ startedAt: number }>;
   system_audio_stop(): Promise<Uint8Array | null>;
 }
 
@@ -148,9 +148,10 @@ export class CallRecorder {
     private readonly onLevel: (side: Side, level: number) => void,
   ) {}
 
-  /** Throws with a user-facing message if either side can't be captured;
-   * nothing is left running in that case. */
-  async start(): Promise<void> {
+  /** `appBundleId` (macOS): record only that app's audio instead of
+   * everything the computer plays. Throws with a user-facing message if
+   * either side can't be captured; nothing is left running in that case. */
+  async start(appBundleId?: string): Promise<void> {
     this.me = newTrack();
     this.call = newTrack();
     try {
@@ -167,7 +168,7 @@ export class CallRecorder {
 
       if (this.platform === 'darwin') {
         // Levels arrive from main as 'system-audio-level' (see renderer.ts).
-        const { startedAt } = await this.api.system_audio_start();
+        const { startedAt } = await this.api.system_audio_start(appBundleId);
         this.macCallStartedAt = startedAt;
       } else {
         const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });

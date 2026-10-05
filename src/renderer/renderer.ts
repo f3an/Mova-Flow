@@ -80,7 +80,9 @@ interface WhisperApi {
   on_update_state(callback: (state: UpdateState) => void): void;
   discover_hosts(): Promise<{ hosts: DiscoveredHost[] }>;
   ensure_microphone_access(): Promise<boolean>;
-  system_audio_start(): Promise<{ startedAt: number }>;
+  system_audio_sources(): Promise<{ bundleId: string; name: string; playing: boolean }[]>;
+  system_audio_start(appBundleId?: string): Promise<{ startedAt: number }>;
+  set_recording_indicator(recording: boolean): Promise<void>;
   system_audio_stop(): Promise<Uint8Array | null>;
   on_system_audio_level(callback: (level: number) => void): void;
   check_for_updates(): Promise<UpdateState>;
@@ -255,6 +257,12 @@ async function refreshTranscribeGate(): Promise<void> {
     <div class="rec-panel" id="recPanel">
       <div class="rec-head">
         <button class="action" id="recBtn">● ${t('rec.start', 'Record a call')}</button>
+        <label class="rec-source" id="recSourceRow" hidden>
+          <span>${t('rec.source', 'Audio from')}</span>
+          <select id="recSource">
+            <option value="">${t('rec.source.all', 'All system audio')}</option>
+          </select>
+        </label>
         <span class="rec-timer" id="recTimer" hidden>00:00</span>
       </div>
       <div class="rec-meters" id="recMeters" hidden>
@@ -297,7 +305,30 @@ function wireCallRecorder(upload: (file: File) => void): void {
   const hint = document.getElementById('recHint') as HTMLParagraphElement;
   const meterMe = document.getElementById('meterMe') as HTMLDivElement;
   const meterCall = document.getElementById('meterCall') as HTMLDivElement;
+  const sourceRow = document.getElementById('recSourceRow') as HTMLLabelElement;
+  const sourceSelect = document.getElementById('recSource') as HTMLSelectElement;
   const hintText = hint.textContent || '';
+
+  // Which app to take the call audio from — macOS only (Windows loopback can
+  // only capture the whole mix). Refreshed whenever the list is about to be
+  // opened, so an app that only just joined its call shows up.
+  if (window.platform === 'darwin') {
+    sourceRow.hidden = false;
+    const allLabel = t('rec.source.all', 'All system audio');
+    const refreshSources = async () => {
+      const apps = await window.api.system_audio_sources();
+      const chosen = sourceSelect.value;
+      sourceSelect.innerHTML =
+        `<option value="">${escapeHtml(allLabel)}</option>` +
+        apps
+          .map((a) => `<option value="${escapeHtml(a.bundleId)}">${escapeHtml(a.name)}${a.playing ? ' ●' : ''}</option>`)
+          .join('');
+      if ([...sourceSelect.options].some((o) => o.value === chosen)) sourceSelect.value = chosen;
+    };
+    void refreshSources();
+    sourceSelect.addEventListener('mousedown', () => void refreshSources());
+    sourceSelect.addEventListener('focus', () => void refreshSources());
+  }
 
   // Speech RMS rarely goes past ~0.3; scale so normal talking fills most of the bar.
   const showLevel = (meter: HTMLDivElement, level: number) => {
@@ -313,6 +344,8 @@ function wireCallRecorder(upload: (file: File) => void): void {
     if (tick) clearInterval(tick);
     tick = null;
     activeCallLevel = null;
+    void window.api.set_recording_indicator(false);
+    sourceSelect.disabled = false;
     recBtn.disabled = false;
     recBtn.classList.remove('danger');
     recBtn.textContent = `● ${t('rec.start', 'Record a call')}`;
@@ -342,7 +375,7 @@ function wireCallRecorder(upload: (file: File) => void): void {
     hint.classList.remove('error-text');
     activeCallLevel = (level) => showLevel(meterCall, level);
     try {
-      await recorder.start();
+      await recorder.start(sourceSelect.value || undefined);
     } catch (err) {
       setIdle();
       // IPC errors arrive as "Error invoking remote method '…': Error: <message>".
@@ -352,6 +385,8 @@ function wireCallRecorder(upload: (file: File) => void): void {
       return;
     }
     startedAt = Date.now();
+    void window.api.set_recording_indicator(true);
+    sourceSelect.disabled = true;
     recBtn.disabled = false;
     recBtn.classList.add('danger');
     recBtn.textContent = `■ ${t('rec.stop', 'Stop & transcribe')}`;
