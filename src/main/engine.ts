@@ -4,7 +4,7 @@ import { execFile, spawn } from 'child_process';
 import { downloadFile } from './download';
 import { downloadGhcrArtifact } from './ghcr';
 import { SpeakerTurn, speakerAt } from './speakerNames';
-import { fixOtherLanguages, MixedLanguageTools } from './mixedLanguage';
+import { fixOtherLanguages, MixedLanguageTools, readJsonWords, Word } from './mixedLanguage';
 
 // Precompiled Windows builds of whisper.cpp are published under build tags
 // (b####), not version tags (v1.9.x) — the latter no longer ship binaries.
@@ -80,9 +80,9 @@ function vadModelPath(userDataDir: string): string {
   return path.join(engineDir(userDataDir), VAD_MODEL_FILE);
 }
 
-// The tiny model spots stretches of a call in another language (see
-// mixedLanguage.ts). Optional, like VAD: without it calls are transcribed
-// in one language as before.
+// The tiny model names the other language in an English file (see
+// mixedLanguage.ts). Optional, like VAD: without it only English is tried
+// for stretches in another language.
 function tinyModelPath(userDataDir: string): string {
   return path.join(engineDir(userDataDir), 'ggml-tiny.bin');
 }
@@ -289,11 +289,7 @@ export interface TranscribeResult {
   detectedLanguage: string;
 }
 
-interface Segment {
-  start: number;
-  end: number;
-  text: string;
-}
+type Segment = Word;
 
 /** Spawns whisper-cli.exe as a child process (not a native binding — the same
  * lesson as the pip-worker hack in the Python version) and parses segments off
@@ -303,9 +299,12 @@ function runWhisper(
   args: string[],
   language: string,
   onSegment: (segment: Segment) => void,
+  /** Also write -ojf JSON here and take the segments from it — they then
+   * carry the model's confidence (see mixedLanguage.ts). */
+  jsonBase?: string,
 ): Promise<{ segments: Segment[]; detectedLanguage: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(exe, args, { cwd: path.dirname(exe) });
+    const child = spawn(exe, jsonBase ? [...args, '-ojf', '-of', jsonBase] : args, { cwd: path.dirname(exe) });
     const segments: Segment[] = [];
     let detectedLanguage = language !== 'auto' ? language : '';
     let buffer = '';
@@ -353,7 +352,12 @@ function runWhisper(
         reject(new Error('Could not read the audio file: unsupported or corrupted format.'));
         return;
       }
-      resolve({ segments, detectedLanguage: detectedLanguage || 'auto' });
+      let result = segments;
+      if (jsonBase) {
+        result = readJsonWords(`${jsonBase}.json`) ?? segments;
+        fs.rmSync(`${jsonBase}.json`, { force: true });
+      }
+      resolve({ segments: result, detectedLanguage: detectedLanguage || 'auto' });
     });
   });
 }
@@ -500,13 +504,21 @@ async function transcribeChannels(
   // One after the other: both at once would just fight over the GPU.
   let count = 0;
   onProgress('Transcribing your side...');
-  const me = await runWhisper(exe, argsFor(files.left, ['-ml', '1', '-sow']), language, () =>
-    onProgress(`Transcribing your side... words: ${++count}`),
+  const me = await runWhisper(
+    exe,
+    argsFor(files.left, ['-ml', '1', '-sow']),
+    language,
+    () => onProgress(`Transcribing your side... words: ${++count}`),
+    `${files.left}.pass`,
   );
   count = 0;
   onProgress('Transcribing the call...');
-  const call = await runWhisper(exe, argsFor(files.right, ['-ml', '1', '-sow']), language, () =>
-    onProgress(`Transcribing the call... words: ${++count}`),
+  const call = await runWhisper(
+    exe,
+    argsFor(files.right, ['-ml', '1', '-sow']),
+    language,
+    () => onProgress(`Transcribing the call... words: ${++count}`),
+    `${files.right}.pass`,
   );
   const mainLang = (side: { detectedLanguage: string }) => (language && language !== 'auto' ? language : side.detectedLanguage);
   const meWords = await fixOtherLanguages(mixed, files.left, me.segments, mainLang(me), onProgress);
@@ -552,17 +564,18 @@ export async function transcribe(
     ...(vad ? ['--vad', '-vm', vPath] : []),
   ];
 
+  const mixed: MixedLanguageTools = {
+    exe,
+    model: modelFilePath,
+    tinyModel: tinyModelPath(userDataDir),
+    vadArgs: vad ? ['--vad', '-vm', vPath] : [],
+    tmpDir: path.dirname(filePath),
+  };
+
   if (speakers) {
     const split = splitStereoWav(filePath);
     if (split) {
       try {
-        const mixed: MixedLanguageTools = {
-          exe,
-          model: modelFilePath,
-          tinyModel: tinyModelPath(userDataDir),
-          vadArgs: vad ? ['--vad', '-vm', vPath] : [],
-          tmpDir: path.dirname(split.left),
-        };
         return await transcribeChannels(exe, argsFor, language, split, speakers, mixed, onProgress);
       } finally {
         fs.rmSync(split.left, { force: true });
@@ -571,10 +584,30 @@ export async function transcribe(
     }
   }
 
-  // Everything else — and a "speakers" file that isn't a 16-bit stereo WAV —
-  // as one mix. With speakers, --diarize still labels lines by the louder
-  // channel (a mono file passes through it unharmed: every segment is "?").
+  // Any other file: word by word, regrouped into lines at pauses, with
+  // stretches in another language transcribed in that language (the same as
+  // each side of a call).
   let count = 0;
+  if (!speakers) {
+    const pass = await runWhisper(
+      exe,
+      argsFor(filePath, ['-ml', '1', '-sow']),
+      language,
+      () => onProgress(`Transcribing... words: ${++count}`),
+      `${filePath}.pass`,
+    );
+    const mainLang = language && language !== 'auto' ? language : pass.detectedLanguage;
+    const words = await fixOtherLanguages(mixed, filePath, pass.segments, mainLang, onProgress);
+    const lines = dropRepeats(wordsToLines(words, () => ''));
+    return {
+      text: lines.map((l) => `[${formatTimestamp(l.start)}] ${l.text.trim()}`).join('\n'),
+      detectedLanguage: pass.detectedLanguage,
+    };
+  }
+
+  // A "speakers" file that isn't a 16-bit stereo WAV, as one mix: --diarize
+  // still labels lines by the louder channel (a mono file passes through it
+  // unharmed: every segment is "?").
   const { segments, detectedLanguage } = await runWhisper(exe, argsFor(filePath, speakers ? ['--diarize'] : []), language, () =>
     onProgress(`Processed segments: ${++count}`),
   );

@@ -558,7 +558,9 @@ function wireCallRecorder(): void {
 
 // Formats whisper-cli can read directly (same list as ALLOWED_EXT on the
 // server). Everything else gets converted to WAV right here, in the browser.
-const NATIVE_EXTS = new Set(['.mp3', '.wav', '.ogg', '.flac']);
+// Only WAV goes up as it is: the host reads WAV itself to check for speech
+// in other languages (main/mixedLanguage.ts); everything else becomes one.
+const NATIVE_EXTS = new Set(['.wav']);
 
 /** whisper-cli can't decode m4a/mov (its bundled miniaudio doesn't support
  * them), but Chromium inside Electron already knows how to parse these
@@ -569,14 +571,10 @@ async function prepareFileForUpload(file: File): Promise<File> {
   const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
   if (NATIVE_EXTS.has(ext)) return file;
 
+  // Decoded straight at 16 kHz: an hour of 48 kHz stereo would otherwise
+  // take over a gigabyte as float samples before it's resampled.
   const arrayBuffer = await file.arrayBuffer();
-  const decodeCtx = new AudioContext();
-  let decoded: AudioBuffer;
-  try {
-    decoded = await decodeCtx.decodeAudioData(arrayBuffer);
-  } finally {
-    decodeCtx.close();
-  }
+  const decoded = await new OfflineAudioContext(1, 1, 16000).decodeAudioData(arrayBuffer);
 
   // Resample to 16kHz mono — the exact WAV shape we've verified whisper-cli
   // reliably accepts.
