@@ -121,19 +121,30 @@ const tabbar = document.getElementById('tabbar') as HTMLDivElement;
 const tabBtnTranscribe = document.getElementById('tabBtnTranscribe') as HTMLButtonElement;
 const tabBtnHistory = document.getElementById('tabBtnHistory') as HTMLButtonElement;
 const tabBtnServer = document.getElementById('tabBtnServer') as HTMLButtonElement;
-const tabTranscribe = document.getElementById('tab-transcribe') as HTMLDivElement;
-const tabHistory = document.getElementById('tab-history') as HTMLDivElement;
-const tabServer = document.getElementById('tab-server') as HTMLDivElement;
+const tabBtnRecord = document.getElementById('tabBtnRecord') as HTMLButtonElement;
+const tabBtnSettings = document.getElementById('tabBtnSettings') as HTMLButtonElement;
 
-function showTab(name: 'transcribe' | 'history' | 'server'): void {
-  tabTranscribe.hidden = name !== 'transcribe';
-  tabHistory.hidden = name !== 'history';
-  tabServer.hidden = name !== 'server';
-  tabBtnTranscribe.classList.toggle('active', name === 'transcribe');
-  tabBtnHistory.classList.toggle('active', name === 'history');
-  tabBtnServer.classList.toggle('active', name === 'server');
+type TabName = 'transcribe' | 'record' | 'history' | 'server' | 'settings';
+const TABS: Record<TabName, [HTMLButtonElement, HTMLDivElement]> = {
+  transcribe: [tabBtnTranscribe, document.getElementById('tab-transcribe') as HTMLDivElement],
+  record: [tabBtnRecord, document.getElementById('tab-record') as HTMLDivElement],
+  history: [tabBtnHistory, document.getElementById('tab-history') as HTMLDivElement],
+  server: [tabBtnServer, document.getElementById('tab-server') as HTMLDivElement],
+  settings: [tabBtnSettings, document.getElementById('tab-settings') as HTMLDivElement],
+};
+
+function showTab(name: TabName): void {
+  for (const [tab, [button, panel]] of Object.entries(TABS) as [TabName, [HTMLButtonElement, HTMLDivElement]][]) {
+    panel.hidden = tab !== name;
+    button.classList.toggle('active', tab === name);
+  }
 }
 tabBtnTranscribe.addEventListener('click', () => showTab('transcribe'));
+tabBtnRecord.addEventListener('click', () => showTab('record'));
+tabBtnSettings.addEventListener('click', () => {
+  showTab('settings');
+  void refreshMics();
+});
 tabBtnHistory.addEventListener('click', () => {
   showTab('history');
   refreshHistoryTab();
@@ -239,22 +250,57 @@ function serverBaseUrl(state: AppState): string | null {
     : `http://${state.host}:${state.port}`;
 }
 
+const LANGUAGE_SELECT = (id: string) => `
+    <div class="lang-row">
+      <span>${t('transcribe.language', 'Language:')}</span>
+      <select id="${id}">
+        <option value="auto">${t('transcribe.language.auto', 'Auto-detect')}</option>
+        <option value="uk">${t('transcribe.language.uk', 'Ukrainian')}</option>
+        <option value="en">English</option>
+      </select>
+    </div>`;
+
+/** Upload and Record both need a reachable server; until there is one they
+ * show the same banner saying why. Each is built once per server address —
+ * Record never mid-call, which would throw the running recorder away. */
 async function refreshTranscribeGate(): Promise<void> {
-  const gate = document.getElementById('transcribeGate') as HTMLDivElement;
   const state = await window.api.get_state();
   const base = serverBaseUrl(state);
-
-  if (base === null) {
-    const busyEntry = BUSY_BANNER[state.server.stage];
-    const message = busyEntry
-      ? `${t(busyEntry[0], busyEntry[1])} ${escapeHtml(state.server.message || '')}`.trim()
-      : t('banner.off', 'Server is off. Go to the Server tab and press Start.');
-    gate.innerHTML = `<div class="banner">${message}</div>`;
-    delete gate.dataset.built;
-    return;
+  const gates = [
+    { el: document.getElementById('transcribeGate') as HTMLDivElement, build: buildUploadGate },
+    { el: document.getElementById('recordGate') as HTMLDivElement, build: buildRecordGate },
+  ];
+  for (const { el, build } of gates) {
+    if (el.id === 'recordGate' && callRecordingActive) continue;
+    if (base === null) {
+      const busyEntry = BUSY_BANNER[state.server.stage];
+      const message = busyEntry
+        ? `${t(busyEntry[0], busyEntry[1])} ${escapeHtml(state.server.message || '')}`.trim()
+        : t('banner.off', 'Server is off. Go to the Server tab and press Start.');
+      el.innerHTML = `<div class="banner">${message}</div>`;
+      delete el.dataset.built;
+      continue;
+    }
+    if (el.dataset.built === base) continue; // already built for this exact base
+    el.dataset.built = base;
+    build(el, base);
   }
-  if (gate.dataset.built === base) return; // already built for this exact base
-  gate.dataset.built = base;
+}
+
+function buildUploadGate(gate: HTMLDivElement, base: string): void {
+  gate.innerHTML = `
+    <div class="drop" id="drop" role="button" tabindex="0" aria-label="Choose an audio file">
+      <input type="file" id="fileInput" accept=".mp3,.wav,.ogg,.flac,.m4a,.mov">
+      <div class="drop-label">${t('drop.label', 'Drag an audio file here, or click to choose')}</div>
+      <div class="drop-hint">mp3 · wav · ogg · flac · m4a · mov</div>
+    </div>
+    ${LANGUAGE_SELECT('lang')}
+    <div id="jobs"></div>
+  `;
+  wireTranscribeUI(base);
+}
+
+function buildRecordGate(gate: HTMLDivElement, base: string): void {
   gate.innerHTML = `
     <div class="rec-panel" id="recPanel">
       <div class="rec-head">
@@ -262,6 +308,7 @@ async function refreshTranscribeGate(): Promise<void> {
         <span class="rec-source" id="recSource" hidden></span>
         <span class="rec-timer" id="recTimer" hidden>00:00</span>
       </div>
+      <p class="rec-mic-line" id="recMicLine"></p>
       <div class="rec-meters" id="recMeters" hidden>
         <div class="rec-meter"><span>${t('rec.me', 'Me')}</span><div class="meter-track"><div class="meter-fill" id="meterMe"></div></div></div>
         <div class="rec-meter"><span>${t('rec.call', 'Call')}</span><div class="meter-track"><div class="meter-fill" id="meterCall"></div></div></div>
@@ -271,22 +318,15 @@ async function refreshTranscribeGate(): Promise<void> {
         'Records your microphone and everything this computer plays — a Zoom, Teams or Telegram call — and marks who said what. Headphones give the cleanest split.',
       )}</p>
     </div>
-    <div class="drop" id="drop" role="button" tabindex="0" aria-label="Choose an audio file">
-      <input type="file" id="fileInput" accept=".mp3,.wav,.ogg,.flac,.m4a,.mov">
-      <div class="drop-label">${t('drop.label', 'Drag an audio file here, or click to choose')}</div>
-      <div class="drop-hint">mp3 · wav · ogg · flac · m4a · mov</div>
-    </div>
-    <div class="lang-row">
-      <span>${t('transcribe.language', 'Language:')}</span>
-      <select id="lang">
-        <option value="auto">${t('transcribe.language.auto', 'Auto-detect')}</option>
-        <option value="uk">${t('transcribe.language.uk', 'Ukrainian')}</option>
-        <option value="en">English</option>
-      </select>
-    </div>
-    <div id="jobs"></div>
+    ${LANGUAGE_SELECT('recLang')}
+    <div id="recJobs"></div>
   `;
-  wireTranscribeUI(base);
+  const upload = makeUploader(
+    base,
+    document.getElementById('recJobs') as HTMLDivElement,
+    document.getElementById('recLang') as HTMLSelectElement,
+  );
+  wireCallRecorder((file) => upload(file, { speakers: 'me-others' }));
 }
 
 // ── Record a call ────────────────────────────────────────────────────────
@@ -299,9 +339,64 @@ window.api.on_system_audio_level((level) => activeCallLevel?.(level));
 // isn't built yet (server off, host unreachable), showing it is the answer —
 // its banner says why recording isn't available.
 let toggleCallRecording: (() => void) | null = null;
+let callRecordingActive = false;
 window.api.on_tray_toggle_recording(() => {
-  showTab('transcribe');
+  showTab('record');
   toggleCallRecording?.();
+});
+
+// ── Microphone (Settings → Recording) ────────────────────────────────────
+// Which microphone records the user — remembered between recordings.
+// Chromium labels inputs with their transport ("AirPods (Bluetooth)"),
+// which is how a Bluetooth mic gets its headset-mode warning.
+const MIC_KEY = 'movaFlowCallMic';
+const micSelect = document.getElementById('recMic') as HTMLSelectElement;
+const micNote = document.getElementById('recMicNote') as HTMLParagraphElement;
+const isBluetooth = (label: string) => /\(bluetooth\)|airpods/i.test(label);
+
+function chosenMicLabel(): string {
+  return micSelect.selectedOptions[0]?.dataset.label || '';
+}
+
+function updateMicNote(): void {
+  micNote.hidden = !isBluetooth(chosenMicLabel());
+  const line = document.getElementById('recMicLine');
+  if (line) {
+    line.innerHTML = `${t('rec.mic', 'Microphone')}: <strong>${escapeHtml(chosenMicLabel() || t('rec.mic.default', 'System default'))}</strong> · <a href="#" id="recMicChange">${t('rec.mic.change', 'change')}</a>${
+      isBluetooth(chosenMicLabel()) ? ` <span class="rec-mic-warn">${t('rec.mic.headset', '— headphones go into headset mode')}</span>` : ''
+    }`;
+    document.getElementById('recMicChange')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      showTab('settings');
+      void refreshMics();
+    });
+  }
+}
+
+async function refreshMics(): Promise<void> {
+  const inputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput');
+  // Chromium's own aliases for the system default / Windows communications device.
+  const aliases = new Set(['default', 'communications']);
+  const defaultLabel = inputs.find((d) => d.deviceId === 'default')?.label.replace(/^Default - /, '') ?? '';
+  const saved = localStorage.getItem(MIC_KEY) ?? '';
+  micSelect.innerHTML =
+    `<option value="" data-label="${escapeHtml(defaultLabel)}">${escapeHtml(
+      defaultLabel ? t('rec.mic.defaultNamed', 'System default ({name})', { name: defaultLabel }) : t('rec.mic.default', 'System default'),
+    )}</option>` +
+    inputs
+      .filter((d) => !aliases.has(d.deviceId))
+      .map((d, i) => {
+        const label = d.label || `${t('rec.mic', 'Microphone')} ${i + 1}`;
+        return `<option value="${escapeHtml(d.deviceId)}" data-label="${escapeHtml(label)}">${escapeHtml(label)}</option>`;
+      })
+      .join('');
+  micSelect.value = [...micSelect.options].some((o) => o.value === saved) ? saved : '';
+  updateMicNote();
+}
+navigator.mediaDevices.addEventListener('devicechange', () => void refreshMics());
+micSelect.addEventListener('change', () => {
+  localStorage.setItem(MIC_KEY, micSelect.value);
+  updateMicNote();
 });
 
 function wireCallRecorder(upload: (file: File) => void): void {
@@ -316,6 +411,8 @@ function wireCallRecorder(upload: (file: File) => void): void {
   toggleCallRecording = () => {
     if (!recBtn.disabled) recBtn.click();
   };
+
+  void refreshMics();
 
   // Speech RMS rarely goes past ~0.3; scale so normal talking fills most of the bar.
   const showLevel = (meter: HTMLDivElement, level: number) => {
@@ -333,6 +430,10 @@ function wireCallRecorder(upload: (file: File) => void): void {
     activeCallLevel = null;
     void window.api.set_recording_indicator(false);
     sourceLabel.hidden = true;
+    micSelect.disabled = false;
+    callRecordingActive = false;
+    langSwitch.disabled = false;
+    langSwitchBusy.hidden = true;
     recBtn.disabled = false;
     recBtn.classList.remove('danger');
     recBtn.textContent = `● ${t('rec.start', 'Record a call')}`;
@@ -374,7 +475,7 @@ function wireCallRecorder(upload: (file: File) => void): void {
     hint.classList.remove('error-text');
     activeCallLevel = (level) => showLevel(meterCall, level);
     try {
-      await recorder.start(source || undefined);
+      await recorder.start(source || undefined, micSelect.value || undefined);
     } catch (err) {
       setIdle();
       // IPC errors arrive as "Error invoking remote method '…': Error: <message>".
@@ -385,6 +486,11 @@ function wireCallRecorder(upload: (file: File) => void): void {
     }
     startedAt = Date.now();
     void window.api.set_recording_indicator(true);
+    micSelect.disabled = true;
+    callRecordingActive = true;
+    // Changing the language reloads the page, which would end the recording.
+    langSwitch.disabled = true;
+    langSwitchBusy.hidden = false;
     sourceLabel.textContent = sourceName
       ? t('rec.from', 'from {name}', { name: sourceName })
       : window.platform === 'darwin'
@@ -512,7 +618,18 @@ function wireTranscribeUI(base: string): void {
     if (file) uploadFile(file);
   });
 
-  wireCallRecorder((file) => uploadFile(file, { speakers: 'me-others' }));
+  const uploadFile = makeUploader(base, jobsEl, langSelect);
+}
+
+/** Uploads a file to `base` for transcription and tracks it as a job card
+ * in `jobsEl` until the transcript is in. Shared by Upload (files) and Record
+ * (call recordings, with speakers=me-others). */
+function makeUploader(
+  base: string,
+  jobsEl: HTMLDivElement,
+  langSelect: HTMLSelectElement,
+): (file: File, options?: { speakers?: 'me-others' }) => Promise<void> {
+  return uploadFile;
 
   function createJobCard(filename: string): HTMLDivElement {
     const card = document.createElement('div');
@@ -739,7 +856,7 @@ function clientHistoryBackend(): HistoryBackend {
     async audioBlob(id, ext) {
       const { data } = await window.api.get_client_history_audio(id);
       if (!data) throw new Error('audio unavailable');
-      return new Blob([data], { type: CLIENT_AUDIO_MIME[ext] || 'application/octet-stream' });
+      return new Blob([new Uint8Array(data)], { type: CLIENT_AUDIO_MIME[ext] || 'application/octet-stream' });
     },
     async remove(id) {
       await window.api.delete_client_history_entry(id);
@@ -909,6 +1026,7 @@ const hostSecretInput = document.getElementById('hostSecretInput') as HTMLInputE
 const copySecretBtn = document.getElementById('copySecretBtn') as HTMLButtonElement;
 const regenSecretBtn = document.getElementById('regenSecretBtn') as HTMLButtonElement;
 const langSwitch = document.getElementById('langSwitch') as HTMLSelectElement;
+const langSwitchBusy = document.getElementById('langSwitchBusy') as HTMLParagraphElement;
 const modelSelect = document.getElementById('modelSelect') as HTMLSelectElement;
 const modelPathInput = document.getElementById('modelPathInput') as HTMLInputElement;
 const browseModelBtn = document.getElementById('browseModelBtn') as HTMLButtonElement;
@@ -1177,10 +1295,23 @@ function applyStaticTranslations(lang: Lang): void {
   set('navLabelUpload', 'nav.upload', 'Upload');
   set('navLabelHistory', 'nav.history', 'History');
   set('navLabelServer', 'nav.server', 'Server');
+  set('navLabelRecord', 'nav.record', 'Record');
+  set('navLabelSettings', 'nav.settings', 'Settings');
+  setTooltip('tabBtnRecord', 'nav.record', 'Record');
+  setTooltip('tabBtnSettings', 'nav.settings', 'Settings');
+  set('recordTitle', 'record.title', 'Record a call');
+  set('settingsTitle', 'settings.title', 'Settings');
+  set('settingsRecordingTitle', 'settings.recording', 'Recording');
+  set('recMicLabel', 'rec.mic', 'Microphone');
+  set('recMicHint', 'rec.mic.hint', 'Used for your side of the call in Record.');
+  set('recMicNote', 'rec.mic.bluetooth', 'A Bluetooth microphone switches your headphones to headset mode while recording, so the call sounds worse in your ears. The built-in mic avoids that.');
+  set('settingsLanguageTitle', 'settings.language', 'Language');
+  set('langSwitchBusy', 'settings.language.busy', "Can't change the language while a call is being recorded.");
+  set('settingsUpdatesTitle', 'settings.updates', 'Updates');
   setTooltip('tabBtnTranscribe', 'nav.upload', 'Upload');
   setTooltip('tabBtnHistory', 'nav.history', 'History');
   setTooltip('tabBtnServer', 'nav.server', 'Server');
-  set('langSwitchLabel', 'lang.switch.label', 'Language');
+  set('langSwitchLabel', 'lang.switch.label', 'Interface language');
   set('historyTitle', 'history.title', 'History');
   set('serverTitle', 'server.title', 'Server');
   set('roleHostTitle', 'role.host.title', 'Server (host)');

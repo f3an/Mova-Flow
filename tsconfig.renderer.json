@@ -1,0 +1,15 @@
+{
+  // The renderer is bundled by esbuild, which doesn't type-check — this is
+  // what checks it (`npm run typecheck`). Kept apart from tsconfig.json
+  // because the renderer is browser code (ES modules, DOM), not Node.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src/renderer/**/*.ts"]
+}

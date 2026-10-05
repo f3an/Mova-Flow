@@ -545,10 +545,72 @@ body {
   margin-top: 18px;
 }
 
+/* ── Settings ────────────────────────────────────────────────────────── */
+.settings-section {
+  padding: 22px 0;
+  border-top: 1px solid var(--line);
+}
+
+.settings-section:first-of-type {
+  border-top: 0;
+  padding-top: 4px;
+}
+
+.settings-section h3 {
+  margin: 0 0 14px;
+  font-size: 17px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: #6b6858;
+}
+
+.settings-row label {
+  flex: 0 0 170px;
+}
+
+.settings-row select {
+  max-width: 360px;
+}
+
+/* "Microphone: X · change" under the Record button. */
+.rec-mic-line {
+  margin: 12px 0 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #6b6858;
+}
+
+.rec-mic-line a {
+  color: var(--moss);
+}
+
+.rec-mic-warn {
+  color: var(--rust);
+}
+
+.rec-mic-note {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--rust);
+  line-height: 1.45;
+}
+
 .rec-timer {
   font-family: var(--mono);
   font-size: 14px;
   color: var(--rust);
+}
+
+/* display: grid would otherwise beat the [hidden] attribute — the meters
+   only belong on screen while recording. */
+.rec-meters[hidden] {
+  display: none;
 }
 
 .rec-meters {

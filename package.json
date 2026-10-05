@@ -4,7 +4,7 @@
   "description": "Mova Flow — a local transcription app built on Electron + whisper.cpp, no Python required.",
   "main": "dist/main/index.js",
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.renderer.json",
     "build:main": "tsc -p tsconfig.json",
     "build:renderer": "esbuild src/renderer/renderer.ts --bundle --platform=browser --format=iife --outfile=dist/renderer/renderer.js && node -e \"require('fs').mkdirSync('dist/renderer',{recursive:true});require('fs').copyFileSync('src/renderer/index.html','dist/renderer/index.html');require('fs').copyFileSync('src/renderer/style.css','dist/renderer/style.css')\"",
     "build": "npm run build:main && npm run build:renderer",
