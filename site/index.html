@@ -260,16 +260,17 @@
       <rect x="45.5" y="26" width="6" height="12" rx="3" fill="#e9e7dc" />
     </svg>
     <h1>Local speech-to-text,<br>powered by Whisper.</h1>
-    <p class="lead">An open-source Electron app built on whisper.cpp. No cloud, no Python, no per-minute API bill — one machine with a GPU transcribes, any other device on your network uses it as a client.</p>
+    <p class="lead">An open-source Electron app built on whisper.cpp. No cloud, no Python, no per-minute API bill — transcribe files, or record a call from any app and get a transcript that says who said what. One machine with a GPU transcribes; any other device on your network uses it as a client.</p>
     <div class="cta-row">
       <a class="btn btn-primary" href="https://github.com/f3an/Mova-Flow/releases/latest">↓ Download latest release</a>
       <a class="btn btn-secondary" href="https://github.com/f3an/Mova-Flow">View on GitHub</a>
     </div>
     <div class="hero-shot">
-      <img src="screenshots/01-upload.png" alt="Mova Flow's Upload tab, showing a processing job and a finished transcript with timestamps" loading="lazy">
+      <img src="screenshots/02-record.png" alt="Mova Flow recording a call, with level meters for both sides and a finished transcript marking each line Me or Others" loading="lazy">
     </div>
     <div class="chip-row">
       <span class="chip">100% local recognition</span>
+      <span class="chip">who said what</span>
       <span class="chip">no Python required</span>
       <span class="chip">host + client over LAN</span>
       <span class="chip">Apache-2.0, open source</span>
@@ -282,15 +283,23 @@
     <div class="features">
       <div class="feature-card">
         <h3>Fully local recognition</h3>
-        <p>Speech-to-text via whisper-cli.exe (whisper.cpp) — audio never leaves your network, no third-party API involved.</p>
+        <p>Speech-to-text via whisper-cli (whisper.cpp) — audio never leaves your network, no third-party API involved. Silence is skipped, so quiet stretches can't turn into hallucinated text.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Record calls from any app</h3>
+        <p>Zoom, Teams, Telegram, a browser — record your mic and the call from the Record tab, the tray or the Dock. On macOS, pick just the app the call is in.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Who said what</h3>
+        <p>You and the call go on separate channels, each transcribed on its own — every line comes back marked Me or Others, even when you talk over each other.</p>
       </div>
       <div class="feature-card">
         <h3>Server / client roles</h3>
         <p>One machine with a GPU holds the model and transcribes; every other device on the network connects as a thin client.</p>
       </div>
       <div class="feature-card">
-        <h3>Automatic GPU detection</h3>
-        <p>Checks for an NVIDIA GPU via nvidia-smi and downloads the matching CUDA or CPU build of whisper.cpp on its own.</p>
+        <h3>Automatic engine setup</h3>
+        <p>On Windows, picks the CUDA or CPU build of whisper.cpp depending on your NVIDIA GPU; on Apple Silicon, a Metal-accelerated build. Downloaded on its own, from mirrors with checksums.</p>
       </div>
       <div class="feature-card">
         <h3>Any Whisper model</h3>
@@ -374,23 +383,35 @@
 
   <section id="screenshots">
     <h2>See it running</h2>
-    <p class="section-sub">The whole interface — uploads, history, and server setup for both roles.</p>
+    <p class="section-sub">The whole interface — uploads, call recording, history, server setup for both roles, and settings.</p>
     <div class="gallery">
       <figure>
         <img src="screenshots/01-upload.png" alt="Upload tab with a processing job and a finished transcript" loading="lazy">
         <figcaption>Upload — drop a file, watch it transcribe live</figcaption>
       </figure>
       <figure>
-        <img src="screenshots/02-history.png" alt="History tab listing past transcriptions with playback and download" loading="lazy">
+        <img src="screenshots/02-record.png" alt="Record tab during a call, with level meters and a transcript marked Me / Others" loading="lazy">
+        <figcaption>Record — both sides of a call, labelled Me / Others</figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/03-source-picker.png" alt="Picker with window thumbnails for choosing which app to record" loading="lazy">
+        <figcaption>On macOS, pick the app the call is in</figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/04-history.png" alt="History tab listing past transcriptions with playback and download" loading="lazy">
         <figcaption>History — every past transcript, with audio playback</figcaption>
       </figure>
       <figure>
-        <img src="screenshots/03-server-host.png" alt="Server tab in host role, showing model selection and the access secret" loading="lazy">
+        <img src="screenshots/05-server-host.png" alt="Server tab in host role, showing model selection and network exposure" loading="lazy">
         <figcaption>Server — host role: model, LAN exposure, secret key</figcaption>
       </figure>
       <figure>
-        <img src="screenshots/04-server-client.png" alt="Server tab in client role, connected to a host over the network" loading="lazy">
+        <img src="screenshots/06-server-client.png" alt="Server tab in client role, connected to a host over the network" loading="lazy">
         <figcaption>Server — client role: point it at a host and go</figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/07-settings.png" alt="Settings tab with microphone, interface language and updates" loading="lazy">
+        <figcaption>Settings — microphone, language, updates</figcaption>
       </figure>
     </div>
   </section>
