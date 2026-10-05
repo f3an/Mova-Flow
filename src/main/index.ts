@@ -21,6 +21,7 @@ import {
   getClientHistory,
   getClientHistoryAudio,
   getClientHistoryText,
+  setClientHistoryText,
 } from './clientHistory';
 import { startExtensionBridge } from './localBridge';
 import { EMPTY_VOCABULARY, parseVocabulary, Vocabulary } from './vocabulary';
@@ -527,6 +528,10 @@ ipcMain.handle('get-client-history-audio', (_evt: IpcMainInvokeEvent, id: string
   const result = getClientHistoryAudio(app.getPath('userData'), id);
   return { data: result?.data ?? null, ext: result?.ext ?? null };
 });
+
+ipcMain.handle('set-client-history-text', (_evt: IpcMainInvokeEvent, id: string, text: string) => ({
+  ok: setClientHistoryText(app.getPath('userData'), id, String(text)),
+}));
 
 ipcMain.handle('delete-client-history-entry', (_evt: IpcMainInvokeEvent, id: string) => ({
   ok: deleteClientHistoryEntry(app.getPath('userData'), id),

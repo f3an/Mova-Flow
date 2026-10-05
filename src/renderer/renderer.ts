@@ -73,6 +73,7 @@ interface WhisperApi {
   get_client_history(): Promise<{ items: ClientHistoryEntry[] }>;
   get_client_history_text(id: string): Promise<{ text: string | null }>;
   get_client_history_audio(id: string): Promise<{ data: Uint8Array | null; ext: string | null }>;
+  set_client_history_text(id: string, text: string): Promise<{ ok: boolean }>;
   delete_client_history_entry(id: string): Promise<{ ok: boolean }>;
   recording_begin(name: string): Promise<{ id: string }>;
   recording_append(id: string, side: 'me' | 'call', startedAt: number, pcm: ArrayBuffer): Promise<void>;
@@ -802,27 +803,44 @@ function makeUploader(
   // back" is here, locally, once the result is in. `file` is the original
   // pick, not the WAV `prepareFileForUpload` may have converted for upload,
   // so re-listening plays back exactly what the user recorded.
-  async function saveToClientHistory(file: File, language: string, text: string): Promise<void> {
+  /** Returns where the transcript is now kept: the client history entry's
+   * id, or null on a host (its own history entry is the job id). */
+  async function saveToClientHistory(file: File, language: string, text: string): Promise<string | null> {
     const state = await window.api.get_state();
-    if (state.role !== 'client') return;
+    if (state.role !== 'client') return null;
     const dot = file.name.lastIndexOf('.');
     const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
     const audioBytes = await file.arrayBuffer();
-    await window.api.save_client_history_entry(file.name, language, ext, audioBytes, text);
+    return (await window.api.save_client_history_entry(file.name, language, ext, audioBytes, text)).entry.id;
   }
 
   /** The recording is in history now (the host keeps its own copy; a client
-   * just saved one) — the safety copy can go. */
-  async function finishSaved(file: File, language: string, text: string, options: UploadOptions): Promise<void> {
+   * just saved one) — the safety copy can go. Resolves with a function that
+   * saves a corrected transcript over that history entry. */
+  async function finishSaved(
+    jobId: string,
+    file: File,
+    language: string,
+    text: string,
+    options: UploadOptions,
+  ): Promise<(text: string) => Promise<void>> {
+    let clientId: string | null;
     try {
-      await saveToClientHistory(file, language, text);
+      clientId = await saveToClientHistory(file, language, text);
     } catch {
-      return; // not in history — keep the safety copy
+      return async () => {}; // not in history — keep the safety copy
     }
     if (options.recordingId) {
       recordingsInFlight.delete(options.recordingId);
       await window.api.delete_recording(options.recordingId);
     }
+    if (clientId) return async (fixed) => void (await window.api.set_client_history_text(clientId!, fixed));
+    return async (fixed) =>
+      void (await authorizedFetch(base, `/api/history/${jobId}/text`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: fixed }),
+      }));
   }
 
   function pollStatus(jobId: string, card: HTMLDivElement, originalFile: File, options: UploadOptions): void {
@@ -875,9 +893,14 @@ function makeUploader(
           </div>
         `;
         progressEl?.replaceWith(box);
+        const textEl = box.querySelector('.transcript-text') as HTMLDivElement;
         box.querySelector('#copyBtn')?.addEventListener('click', (e) => copyText(e.currentTarget as HTMLButtonElement));
-        box.querySelector('#downloadBtn')?.addEventListener('click', () => downloadTranscript(base, jobId));
-        void finishSaved(originalFile, data.detectedLanguage || 'auto', data.result || '', options);
+        // What's on screen, corrections included.
+        box.querySelector('#downloadBtn')?.addEventListener('click', () =>
+          downloadTextAsFile(textEl.textContent || '', `transcript_${jobId}.txt`),
+        );
+        const saved = finishSaved(jobId, originalFile, data.detectedLanguage || 'auto', data.result || '', options);
+        makeCorrectable(textEl, async (fixed) => (await saved)(fixed));
         return;
       }
 
@@ -891,22 +914,135 @@ function makeUploader(
   }
 }
 
-/** A plain <a href> can't carry an Authorization header, so the file is
- * fetched and handed to the browser as a blob link instead. */
-async function downloadTranscript(base: string, jobId: string): Promise<void> {
-  try {
-    const res = await authorizedFetch(base, `/api/download/${jobId}`);
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `transcript_${jobId}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch {
-    // Silently ignored — a rare case, and the transcript stays visible on screen anyway.
+// ── Correcting a transcript ──────────────────────────────────────────────
+// Double-click a word or select a phrase in a transcript to fix it: every
+// occurrence in that transcript changes, the transcript is saved over its
+// history entry, and — "Remember" ticked — the fix goes into the
+// vocabulary (as heard → as it should be, plus the right spelling as a
+// term), so the next recordings get it right. Whisper's own confidence
+// can't point at the mistakes: on a real interview it was sure of
+// "Async/Evade" and unsure of words it got right.
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Whole words only, ignoring case — the same rule the host uses for the
+ * vocabulary's replacements (main/vocabulary.ts). */
+function replaceWholeWords(text: string, from: string, to: string): { text: string; count: number } {
+  let count = 0;
+  const out = text.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(from)}(?![\\p{L}\\p{N}])`, 'giu'), () => {
+    count++;
+    return to;
+  });
+  return { text: out, count };
+}
+
+async function rememberCorrection(from: string, to: string): Promise<void> {
+  const { vocabulary, useHost } = await window.api.get_vocabulary();
+  const replacements = vocabulary.replacements.filter(([f]) => f.toLowerCase() !== from.toLowerCase());
+  replacements.push([from, to]);
+  const terms = vocabulary.terms.some((term) => term.toLowerCase() === to.toLowerCase()) || to.length > 40
+    ? vocabulary.terms
+    : [...vocabulary.terms, to];
+  await window.api.save_vocabulary({ terms, replacements }, useHost);
+}
+
+function makeCorrectable(textEl: HTMLElement, save: (text: string) => Promise<void>): void {
+  textEl.classList.add('correctable');
+  textEl.title = t('correct.tip', 'Double-click a word or select a phrase to correct it');
+  textEl.addEventListener('mouseup', () => {
+    // After the click: a double-click selects the word only once it's done.
+    setTimeout(() => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || !textEl.contains(selection.anchorNode)) return;
+      const picked = selection
+        .toString()
+        .trim()
+        .replace(/^[^\p{L}\p{N}.]+|[^\p{L}\p{N}]+$/gu, '');
+      if (!picked || picked.length > 80 || picked.includes('\n')) return;
+      openCorrection(textEl, picked, selection.getRangeAt(0).getBoundingClientRect(), save);
+    });
+  });
+}
+
+function openCorrection(
+  textEl: HTMLElement,
+  picked: string,
+  at: DOMRect,
+  save: (text: string) => Promise<void>,
+): void {
+  document.querySelector('.correct-pop')?.remove();
+  const pop = document.createElement('div');
+  pop.className = 'correct-pop';
+  pop.innerHTML = `
+    <div class="correct-from">«${escapeHtml(picked)}» →</div>
+    <input type="text" class="correct-input" spellcheck="false">
+    <label class="checkbox-row">
+      <input type="checkbox" class="correct-remember" checked>
+      <span>${t('correct.remember', 'Remember for next recordings')}</span>
+    </label>
+    <div class="actions">
+      <button class="action" data-act="replace">${t('correct.replace', 'Replace')}</button>
+      <button class="action secondary" data-act="cancel">${t('correct.cancel', 'Cancel')}</button>
+    </div>`;
+  document.body.appendChild(pop);
+  const input = pop.querySelector('.correct-input') as HTMLInputElement;
+  input.value = picked;
+  const left = Math.min(at.left, window.innerWidth - pop.offsetWidth - 16);
+  const below = at.bottom + 8 + pop.offsetHeight < window.innerHeight;
+  pop.style.left = `${Math.max(16, left)}px`;
+  pop.style.top = `${below ? at.bottom + 8 : Math.max(16, at.top - pop.offsetHeight - 8)}px`;
+  input.focus();
+  input.select();
+
+  const close = () => {
+    pop.remove();
+    document.removeEventListener('mousedown', onOutside, true);
+  };
+  const onOutside = (e: MouseEvent) => {
+    if (!pop.contains(e.target as Node)) close();
+  };
+  document.addEventListener('mousedown', onOutside, true);
+
+  const apply = async () => {
+    const to = input.value.trim();
+    const remember = (pop.querySelector('.correct-remember') as HTMLInputElement).checked;
+    close();
+    if (!to || to === picked) return;
+    const { text, count } = replaceWholeWords(textEl.textContent || '', picked, to);
+    if (!count) return;
+    textEl.textContent = text;
+    const parts = [t('correct.done', 'Replaced {n}', { n: String(count) })];
+    try {
+      await save(text);
+    } catch {
+      parts.push(t('correct.notSaved', 'not saved to history'));
+    }
+    if (remember) {
+      try {
+        await rememberCorrection(picked, to);
+        parts.push(t('correct.remembered', 'remembered'));
+      } catch {
+        // the vocabulary stays as it was
+      }
+    }
+    showCorrectionNote(textEl, parts.join(' · '));
+  };
+  pop.querySelector('[data-act="replace"]')?.addEventListener('click', () => void apply());
+  pop.querySelector('[data-act="cancel"]')?.addEventListener('click', close);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') void apply();
+    if (e.key === 'Escape') close();
+  });
+}
+
+function showCorrectionNote(textEl: HTMLElement, message: string): void {
+  let note = textEl.parentElement?.querySelector('.correct-note') as HTMLDivElement | null;
+  if (!note) {
+    note = document.createElement('div');
+    note.className = 'correct-note';
+    textEl.after(note);
   }
+  note.textContent = message;
 }
 
 function copyText(btn: HTMLButtonElement): void {
@@ -942,6 +1078,7 @@ interface HistoryBackend {
   list(): Promise<HistoryItem[]>;
   text(id: string): Promise<string>;
   audioBlob(id: string, ext: string): Promise<Blob>;
+  setText(id: string, text: string): Promise<void>;
   remove(id: string): Promise<void>;
 }
 
@@ -961,6 +1098,14 @@ function hostHistoryBackend(base: string): HistoryBackend {
       const res = await authorizedFetch(base, `/api/history/${id}/audio`);
       if (!res.ok) throw new Error('audio unavailable');
       return res.blob();
+    },
+    async setText(id, text) {
+      const res = await authorizedFetch(base, `/api/history/${id}/text`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error('not saved');
     },
     async remove(id) {
       await authorizedFetch(base, `/api/history/${id}`, { method: 'DELETE' });
@@ -991,6 +1136,9 @@ function clientHistoryBackend(): HistoryBackend {
       const { data } = await window.api.get_client_history_audio(id);
       if (!data) throw new Error('audio unavailable');
       return new Blob([new Uint8Array(data)], { type: CLIENT_AUDIO_MIME[ext] || 'application/octet-stream' });
+    },
+    async setText(id, text) {
+      if (!(await window.api.set_client_history_text(id, text)).ok) throw new Error('not saved');
     },
     async remove(id) {
       await window.api.delete_client_history_entry(id);
@@ -1204,6 +1352,7 @@ function wireHistoryCard(card: HTMLDivElement, backend: HistoryBackend): void {
       try {
         const text = await backend.text(id);
         textBox.innerHTML = `<div class="transcript-text">${escapeHtml(text)}</div>`;
+        makeCorrectable(textBox.querySelector('.transcript-text') as HTMLDivElement, (fixed) => backend.setText(id, fixed));
         textBox.dataset.loaded = '1';
       } catch {
         textBox.innerHTML = `<div class="error-text">${t('job.err.unreachable', 'Could not reach the server.')}</div>`;

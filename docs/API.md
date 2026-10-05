@@ -100,7 +100,7 @@ The transcript as a `.txt` file. Requires a token.
 
 ---
 
-The four routes below are further restricted by `requireLocal` — reachable **only** from `127.0.0.1`/`::1`, even with a valid token (see [ARCHITECTURE.md](ARCHITECTURE.md#security-model)). A client machine gets `403` on every one of these, which is why it keeps its own history separately, over IPC.
+The five routes below are further restricted by `requireLocal` — reachable **only** from `127.0.0.1`/`::1`, even with a valid token (see [ARCHITECTURE.md](ARCHITECTURE.md#security-model)). A client machine gets `403` on every one of these, which is why it keeps its own history separately, over IPC.
 
 ## `GET /api/history`
 
@@ -129,6 +129,19 @@ The host's local job list, newest first.
 Returns the raw audio file (`Content-Type` by extension: `audio/mpeg`, `audio/wav`, `audio/ogg`, `audio/flac`).
 
 **`404` response** — the entry isn't in `history.json`, or the file is missing from disk.
+
+## `PUT /api/history/:id/text`
+
+Saves a transcript corrected by hand in the app over the original (`transcripts/<id>.txt`).
+
+**Request body** — JSON, up to 10 MB:
+```json
+{ "text": "[00:00] ..." }
+```
+
+**`200` response:** `{ "ok": true }`
+
+**`404` response** — `id` failed validation, isn't in `history.json`, or `text` isn't a string.
 
 ## `DELETE /api/history/:id`
 
