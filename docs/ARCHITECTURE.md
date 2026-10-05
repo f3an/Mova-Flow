@@ -20,7 +20,7 @@ The app is the usual three Electron layers plus a built-in HTTP server, which is
 ```mermaid
 flowchart TB
     subgraph UI["Renderer process (Chromium, sandboxed)"]
-        R["index.html + renderer.ts<br/>Upload / History / Server tabs · i18n.ts"]
+        R["index.html + renderer.ts<br/>Upload / Record / History / Server / Settings tabs · i18n.ts"]
     end
 
     subgraph PL["Preload"]
@@ -163,9 +163,9 @@ Record IDs are 12-character hex strings (`randomUUID().replace(/-/g,'').slice(0,
 
 `electron-updater` checks `github.com/f3an/Mova-Flow`'s releases on startup and every 6 hours after (`initAutoUpdater()` in `main/index.ts`), reading the `latest.yml`/`latest-mac.yml` that `release.yml` already publishes alongside each installer — no separate update server.
 
-- **Windows and macOS**: both download silently in the background; once ready, the renderer shows a banner (`get-update-state` IPC, polled every 30s) with a **Restart to update** button that calls `autoUpdater.quitAndInstall()`. The macOS build is signed and notarized (Developer ID cert, imported in `release.yml`), so Squirrel.Mac's signature check against the running app passes.
+- **The user decides when to download**: a found version shows a banner (and an OS notification when the window isn't in front) with **Download**, then download progress, then **Restart to update** (`autoUpdater.quitAndInstall()`). With **Settings → Updates → Update automatically** on, the download starts by itself and only the restart is asked for. Update state is pushed to the renderer (`update-state` events) rather than polled. The macOS build is signed and notarized (Developer ID cert, imported in `release.yml`), so Squirrel.Mac's signature check against the running app passes.
 - Skipped entirely when running unpacked (`app.isPackaged` is false) — `npm run dev` has no `app-update.yml` for `electron-updater` to read, since electron-builder only writes that file during actual packaging.
-- The Server tab's **Check for updates** button (bottom, next to the current version) triggers the same `autoUpdater.checkForUpdates()` on demand, rather than waiting for the startup check or the next 6-hour interval — useful right after a new release ships.
+- **Settings → Updates → Check for updates** triggers the same `autoUpdater.checkForUpdates()` on demand, rather than waiting for the startup check or the next 6-hour interval — useful right after a new release ships.
 
 The `build.publish` block in `package.json` is what makes electron-builder generate `app-update.yml`/`latest*.yml` in the first place; `npm run dist` still passes `--publish never` so electron-builder never uploads anything itself — that stays the job of `release.yml`'s own `softprops/action-gh-release` step.
 
