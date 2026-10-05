@@ -50,6 +50,8 @@ Queues a file for recognition. Requires `Authorization: Bearer <token>`.
 | `language` | string | a language code, or `auto` (the default) |
 | `speakers` | string | optional. `me-others`: the file is stereo with the uploader's own mic on the left channel and everyone else on the right. For a 16-bit PCM stereo WAV, each channel is transcribed separately and the lines merged by time, prefixed `Me:` / `Others:` — so overlapping speech keeps both sides; mic lines that just repeat the call (speakers without headphones) are dropped. Any other file falls back to one pass labelled by the louder channel (`--diarize`) |
 | `speaker_timeline` | string | optional, only with `speakers=me-others`. JSON array of `{ "name", "start", "end", "words", "self"? }` — who spoke when (seconds from the start of the file, e.g. from Meet's live captions). Right-channel lines get the best-overlapping non-`self` name instead of `Others:`; the call side is then transcribed word by word so a line is cut where the speaker changes. Malformed entries are ignored |
+| `vocabulary` | string | optional. JSON `{ "terms": ["ESM", "async/await"], "replacements": [["Async/Evade", "async/await"]] }` — the client's vocabulary (see `vocabulary.ts`). Terms go to whisper-cli as a prompt carried into every window; replacements (as heard → as it should be) are applied to the finished text, whole words only, ignoring case. Malformed entries are dropped |
+| `host_vocabulary` | string | optional. `0`: don't add the host's own vocabulary (from its Settings) to this job. By default it's merged in, the client's replacements winning on the same word |
 
 **`200` response:**
 ```json

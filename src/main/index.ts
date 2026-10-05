@@ -23,6 +23,7 @@ import {
   getClientHistoryText,
 } from './clientHistory';
 import { startExtensionBridge } from './localBridge';
+import { EMPTY_VOCABULARY, parseVocabulary, Vocabulary } from './vocabulary';
 import {
   activeRecording,
   appendRecording,
@@ -58,6 +59,11 @@ interface Config {
   // and the user is only asked to restart. false: the user is told a version
   // is available and decides when to download it.
   auto_update: boolean;
+  // Terms and replacements for this machine's transcripts — sent with every
+  // upload; on a host, also applied to the clients' (see vocabulary.ts).
+  vocabulary: Vocabulary;
+  // Client: let the host add its own vocabulary to this machine's uploads.
+  use_host_vocabulary: boolean;
 }
 
 const DEFAULT_CONFIG: Config = {
@@ -71,6 +77,8 @@ const DEFAULT_CONFIG: Config = {
   model_path: '',
   lan_expose: false,
   auto_update: false,
+  vocabulary: EMPTY_VOCABULARY,
+  use_host_vocabulary: true,
 };
 
 function modelChoiceFromConfig(cfg: Config): ModelChoice {
@@ -355,7 +363,14 @@ async function startServer(): Promise<void> {
   try {
     await ensureEngine(userDataDir, model, (message) => setServerState({ stage: 'installing', message }));
     setServerState({ stage: 'starting', message: 'Starting server...' });
-    await controller.start(port, userDataDir, modelPath(userDataDir, model), cfg.lan_expose, () => authSecret);
+    await controller.start(
+      port,
+      userDataDir,
+      modelPath(userDataDir, model),
+      cfg.lan_expose,
+      () => authSecret,
+      () => parseVocabulary(readConfig().vocabulary),
+    );
     if (cfg.lan_expose) startAdvertising(port);
     setServerState({ stage: 'running', message: 'Ready', port, error: null });
   } catch (err) {
@@ -570,6 +585,17 @@ ipcMain.handle('get-update-state', () => updateState);
 
 ipcMain.handle('download-update', () => {
   if (updateState.stage === 'available' || (updateState.stage === 'error' && updateState.version)) downloadUpdate();
+});
+
+ipcMain.handle('get-vocabulary', () => {
+  const cfg = readConfig();
+  return { vocabulary: parseVocabulary(cfg.vocabulary), useHost: cfg.use_host_vocabulary !== false };
+});
+
+ipcMain.handle('save-vocabulary', (_evt: IpcMainInvokeEvent, vocabulary: unknown, useHost: boolean) => {
+  const clean = parseVocabulary(vocabulary);
+  writeConfig({ ...readConfig(), vocabulary: clean, use_host_vocabulary: !!useHost });
+  return { vocabulary: clean };
 });
 
 ipcMain.handle('set-auto-update', (_evt: IpcMainInvokeEvent, enabled: boolean) => {

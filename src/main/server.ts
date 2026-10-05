@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import { SpeakerLabels, transcribe } from './engine';
 import { issueToken, timingSafeEqualStr, verifyToken } from './auth';
 import { rateLimiter } from './rateLimit';
+import { mergeVocabularies, parseVocabulary, Vocabulary } from './vocabulary';
 import { parseSpeakerTimeline } from './speakerNames';
 
 // whisper-cli decodes audio via miniaudio, which only supports these formats
@@ -100,7 +101,8 @@ function runJob(
   outputDir: string,
   audioDir: string,
   isLocal: boolean,
-  speakers?: SpeakerLabels,
+  speakers: SpeakerLabels | undefined,
+  vocabulary: Vocabulary,
 ): void {
   const job = jobs.get(jobId)!;
   job.status = 'processing';
@@ -109,7 +111,7 @@ function runJob(
   transcribe(userDataDir, modelFilePath, filePath, language, (progress) => {
     const j = jobs.get(jobId);
     if (j) j.progress = progress;
-  }, speakers)
+  }, speakers, vocabulary)
     .then((result) => {
       const ext = path.extname(originalname).toLowerCase();
 
@@ -171,6 +173,7 @@ export class ServerController {
     modelFilePath: string,
     lanExpose: boolean,
     getSecret: () => string,
+    getHostVocabulary: () => Vocabulary,
   ): Promise<void> {
     if (this.httpServer) return Promise.resolve();
 
@@ -275,8 +278,26 @@ export class ServerController {
         req.body.speakers === 'me-others'
           ? { left: 'Me', right: 'Others', timeline: parseSpeakerTimeline(req.body.speaker_timeline) }
           : undefined;
+      // The client's own vocabulary (`vocabulary`, JSON), on top of the
+      // host's unless the client opted out (`host_vocabulary=0`).
+      const vocabulary = mergeVocabularies(
+        req.body.host_vocabulary === '0' ? { terms: [], replacements: [] } : getHostVocabulary(),
+        parseVocabulary(req.body.vocabulary),
+      );
       jobs.set(jobId, { status: 'queued', progress: 'Queued...', filename: file.originalname });
-      runJob(jobId, file.path, file.originalname, language, userDataDir, modelFilePath, outputDir, audioDir, isLocal, speakers);
+      runJob(
+        jobId,
+        file.path,
+        file.originalname,
+        language,
+        userDataDir,
+        modelFilePath,
+        outputDir,
+        audioDir,
+        isLocal,
+        speakers,
+        vocabulary,
+      );
 
       res.json({ job_id: jobId });
     });

@@ -202,6 +202,26 @@
         </section>
 
         <section class="settings-section">
+          <h3 id="settingsVocabTitle">Vocabulary</h3>
+          <div class="field-row">
+            <label for="vocabTerms" id="vocabTermsLabel">Terms</label>
+            <textarea id="vocabTerms" rows="3" spellcheck="false" placeholder="ESM, CommonJS, async/await, Sentry, EPAM"></textarea>
+          </div>
+          <p class="secret-hint" id="vocabTermsHint">Names and jargon that come up in your recordings, separated by commas or new lines. Whisper is told to expect them.</p>
+          <div class="field-row">
+            <label for="vocabReplacements" id="vocabReplacementsLabel">Replacements</label>
+            <textarea id="vocabReplacements" rows="4" spellcheck="false" placeholder="Async/Evade → async/await&#10;Revit → RabbitMQ"></textarea>
+          </div>
+          <p class="secret-hint" id="vocabReplacementsHint">One per line: as heard → as it should be. Applied to every finished transcript, whole words only.</p>
+          <label class="checkbox-row" id="vocabUseHostRow" style="margin-top: 14px;">
+            <input type="checkbox" id="vocabUseHost">
+            <span id="vocabUseHostLabel">Also use the host's vocabulary</span>
+          </label>
+          <p class="secret-hint" id="vocabHostNote" hidden>On this host, the vocabulary also applies to recordings sent by clients.</p>
+          <p class="secret-hint" id="vocabSaved" hidden>Saved.</p>
+        </section>
+
+        <section class="settings-section">
           <h3 id="settingsUpdatesTitle">Updates</h3>
           <div class="about-row" style="margin-top: 0; padding-top: 0; border-top: 0;">
             <span class="secret-hint" id="appVersionText" style="margin: 0;"></span>

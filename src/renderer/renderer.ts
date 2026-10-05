@@ -81,6 +81,8 @@ interface WhisperApi {
   read_recording(id: string): Promise<{ data: Uint8Array | null; speakerTimeline: string | null }>;
   show_recording(id: string): Promise<void>;
   delete_recording(id: string): Promise<{ ok: boolean }>;
+  get_vocabulary(): Promise<{ vocabulary: Vocabulary; useHost: boolean }>;
+  save_vocabulary(vocabulary: Vocabulary, useHost: boolean): Promise<{ vocabulary: Vocabulary }>;
   get_update_state(): Promise<UpdateState>;
   install_update(): Promise<void>;
   download_update(): Promise<void>;
@@ -106,6 +108,12 @@ interface PendingRecording {
   interrupted: boolean;
   size: number;
   seconds: number;
+}
+
+/** See main/vocabulary.ts. */
+interface Vocabulary {
+  terms: string[];
+  replacements: [string, string][];
 }
 
 interface UpdateState {
@@ -162,6 +170,7 @@ tabBtnRecord.addEventListener('click', () => showTab('record'));
 tabBtnSettings.addEventListener('click', () => {
   showTab('settings');
   void refreshMics();
+  void window.api.get_state().then((state) => loadVocabulary(state.role));
 });
 tabBtnHistory.addEventListener('click', () => {
   showTab('history');
@@ -758,6 +767,13 @@ function makeUploader(
     formData.append('language', langSelect.value);
     if (options.speakers) formData.append('speakers', options.speakers);
     if (options.speakerTimeline) formData.append('speaker_timeline', options.speakerTimeline);
+    try {
+      const { vocabulary, useHost } = await window.api.get_vocabulary();
+      formData.append('vocabulary', JSON.stringify(vocabulary));
+      if (!useHost) formData.append('host_vocabulary', '0');
+    } catch {
+      // no vocabulary — transcribed without one
+    }
 
     try {
       for (let waited = 0; ; waited += BUSY_RETRY_MS) {
@@ -1546,6 +1562,14 @@ function applyStaticTranslations(lang: Lang): void {
   set('settingsLanguageTitle', 'settings.language', 'Language');
   set('langSwitchBusy', 'settings.language.busy', "Can't change the language while a call is being recorded.");
   set('settingsUpdatesTitle', 'settings.updates', 'Updates');
+  set('settingsVocabTitle', 'settings.vocab', 'Vocabulary');
+  set('vocabTermsLabel', 'vocab.terms', 'Terms');
+  set('vocabTermsHint', 'vocab.terms.hint', '');
+  set('vocabReplacementsLabel', 'vocab.replacements', 'Replacements');
+  set('vocabReplacementsHint', 'vocab.replacements.hint', '');
+  set('vocabUseHostLabel', 'vocab.useHost', "Also use the host's vocabulary");
+  set('vocabHostNote', 'vocab.hostNote', '');
+  set('vocabSaved', 'vocab.saved', 'Saved.');
   setTooltip('tabBtnTranscribe', 'nav.upload', 'Upload');
   setTooltip('tabBtnHistory', 'nav.history', 'History');
   setTooltip('tabBtnServer', 'nav.server', 'Server');
@@ -1640,6 +1664,46 @@ updateBanner.addEventListener('click', (event) => {
   if (action === 'download') void window.api.download_update();
   if (action === 'install') void window.api.install_update();
 });
+
+// ── Vocabulary (Settings) — see main/vocabulary.ts ──
+const vocabTerms = document.getElementById('vocabTerms') as HTMLTextAreaElement;
+const vocabReplacements = document.getElementById('vocabReplacements') as HTMLTextAreaElement;
+const vocabUseHost = document.getElementById('vocabUseHost') as HTMLInputElement;
+const vocabSaved = document.getElementById('vocabSaved') as HTMLParagraphElement;
+let vocabSavedTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** "as heard → as it should be" (also ->, =>, =) per line. */
+function parseReplacementLines(text: string): [string, string][] {
+  return text
+    .split('\n')
+    .map((line) => line.split(/\s*(?:→|->|=>|=)\s*/))
+    .filter((parts) => parts.length >= 2 && parts[0].trim())
+    .map((parts) => [parts[0].trim(), parts.slice(1).join(' ').trim()] as [string, string]);
+}
+
+async function loadVocabulary(role: string): Promise<void> {
+  const { vocabulary, useHost } = await window.api.get_vocabulary();
+  vocabTerms.value = vocabulary.terms.join(', ');
+  vocabReplacements.value = vocabulary.replacements.map(([from, to]) => `${from} → ${to}`).join('\n');
+  vocabUseHost.checked = useHost;
+  (document.getElementById('vocabUseHostRow') as HTMLLabelElement).hidden = role !== 'client';
+  (document.getElementById('vocabHostNote') as HTMLParagraphElement).hidden = role !== 'host';
+}
+
+async function saveVocabulary(): Promise<void> {
+  const terms = vocabTerms.value.split(/[,\n]/).map((t) => t.trim()).filter(Boolean);
+  const { vocabulary } = await window.api.save_vocabulary(
+    { terms, replacements: parseReplacementLines(vocabReplacements.value) },
+    vocabUseHost.checked,
+  );
+  vocabTerms.value = vocabulary.terms.join(', ');
+  vocabReplacements.value = vocabulary.replacements.map(([from, to]) => `${from} → ${to}`).join('\n');
+  vocabSaved.hidden = false;
+  if (vocabSavedTimer) clearTimeout(vocabSavedTimer);
+  vocabSavedTimer = setTimeout(() => (vocabSaved.hidden = true), 1500);
+}
+
+for (const el of [vocabTerms, vocabReplacements, vocabUseHost]) el.addEventListener('change', () => void saveVocabulary());
 
 autoUpdateCheckbox.addEventListener('change', () => {
   void window.api.set_auto_update(autoUpdateCheckbox.checked);

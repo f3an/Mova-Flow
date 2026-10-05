@@ -1006,7 +1006,8 @@ button.action.danger {
   margin-bottom: 6px;
 }
 
-.field-row input {
+.field-row input,
+.field-row textarea {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--line);
@@ -1015,6 +1016,12 @@ button.action.danger {
   font-size: 13px;
   background: white;
   color: var(--ink);
+}
+
+.field-row textarea {
+  resize: vertical;
+  line-height: 1.5;
+  box-sizing: border-box;
 }
 
 .field-row input:disabled {
@@ -1102,4 +1109,17 @@ button.action.danger {
   font-size: 13px;
   background: #ece9dd;
   color: var(--ink);
+}
+
+/* Vocabulary: the same label column as the other settings rows. */
+.settings-section .field-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.settings-section .field-row label {
+  flex: 0 0 170px;
+  margin: 9px 0 0;
+  font-size: 12.5px;
 }
