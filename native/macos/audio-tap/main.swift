@@ -25,7 +25,9 @@
 // stdout, one JSON object per line:
 //   {"event":"started","at":<epoch ms the recording started>}
 //   {"level":<0..1 RMS>}            ~10 times a second, for the UI meter
+//   {"event":"format","sampleRate":…,"channels":…}  the stream format changed
 //   {"event":"stopped","seconds":<recorded>}
+// MOVA_TAP_DEBUG=1 in the environment prints actual vs declared rates to stderr.
 //   {"event":"error","message":"..."}   then exit 1
 import AppKit
 import AVFoundation
@@ -239,10 +241,32 @@ check(AudioHardwareCreateProcessTap(tapDescription, &tapID), "Creating the audio
 
 var formatAddress = AudioObjectPropertyAddress(
   mSelector: kAudioTapPropertyFormat, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-var streamDescription = AudioStreamBasicDescription()
-var descriptionSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-check(AudioObjectGetPropertyData(tapID, &formatAddress, 0, nil, &descriptionSize, &streamDescription), "Reading the tap format")
-guard let tapFormat = AVAudioFormat(streamDescription: &streamDescription) else { fail("Unsupported tap format") }
+
+// Filled in once the aggregate device exists (below); until then the tap's
+// own declared format is all there is.
+var aggregateID = AudioObjectID(kAudioObjectUnknown)
+
+/** The format the audio actually arrives in. The tap's channel layout, but
+ * the sample rate of the device it's read through: when Bluetooth headphones
+ * switch to headset mode, buffers arrive at 24 kHz while the tap still
+ * declares 48 kHz — read at the declared rate, speech came out chopped and
+ * several times too fast. */
+func readTapFormat() -> AVAudioFormat? {
+  var description = AudioStreamBasicDescription()
+  var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+  guard AudioObjectGetPropertyData(tapID, &formatAddress, 0, nil, &size, &description) == noErr else { return nil }
+  if aggregateID != kAudioObjectUnknown,
+    let rate = readProperty(aggregateID, kAudioDevicePropertyNominalSampleRate, Float64(0)), rate > 0 {
+    description.mSampleRate = rate
+  }
+  return AVAudioFormat(streamDescription: &description)
+}
+
+// The format can change mid-recording: Bluetooth headphones (AirPods) drop
+// from 48 kHz to a 16–24 kHz headset mode the moment any app opens their
+// microphone — Mova Flow itself does, to record the user. So the format and
+// converter are variables, re-read whenever Core Audio says something changed.
+guard var tapFormat = readTapFormat() else { fail("Unsupported tap format") }
 
 // A tap is read through a private aggregate device built around it.
 let outputUID = defaultOutputDeviceUID()
@@ -256,12 +280,24 @@ let aggregateDescription: [String: Any] = [
   kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: outputUID]],
   kAudioAggregateDeviceTapListKey: [[kAudioSubTapDriftCompensationKey: true, kAudioSubTapUIDKey: tapDescription.uuid.uuidString]],
 ]
-var aggregateID = AudioObjectID(kAudioObjectUnknown)
 check(AudioHardwareCreateAggregateDevice(aggregateDescription as CFDictionary, &aggregateID), "Creating the aggregate device")
+if let format = readTapFormat() { tapFormat = format }  // now with the device's real rate
 
 guard let outFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true),
-  let converter = AVAudioConverter(from: tapFormat, to: outFormat)
+  var converter = AVAudioConverter(from: tapFormat, to: outFormat)
 else { fail("Can't convert \(tapFormat) to 16 kHz mono") }
+
+/** Picks up a new tap format, if any. Runs on the work queue only. */
+func refreshFormat() {
+  guard let current = readTapFormat(),
+    current.sampleRate != tapFormat.sampleRate || current.channelCount != tapFormat.channelCount
+      || current.isInterleaved != tapFormat.isInterleaved,
+    let newConverter = AVAudioConverter(from: current, to: outFormat)
+  else { return }
+  tapFormat = current
+  converter = newConverter
+  emit(["event": "format", "sampleRate": current.sampleRate, "channels": Int(current.channelCount)])
+}
 var file: AVAudioFile?
 do {
   file = try AVAudioFile(forWriting: outURL, settings: outFormat.settings, commonFormat: .pcmFormatInt16, interleaved: true)
@@ -306,7 +342,43 @@ var levelSum: Float = 0
 var levelCount = 0
 var lastLevelEmit = Date()
 
-func process(_ input: AVAudioPCMBuffer, hostTime: UInt64) {
+var buffersSinceFormatCheck = 0
+var debugFrames = 0
+var debugStart: UInt64 = 0
+
+/** One IO cycle's raw bytes (one Data per AudioBuffer), interpreted with the
+ * format current *here* on the work queue — the real-time callback doesn't
+ * touch formats at all. */
+func process(raw: [Data], hostTime: UInt64) {
+  // Belt and braces next to the change listeners: re-check about twice a
+  // second, so a missed or late notification can't garble more than that.
+  buffersSinceFormatCheck += 1
+  if buffersSinceFormatCheck >= 50 {
+    buffersSinceFormatCheck = 0
+    refreshFormat()
+  }
+  let bytesPerFrame = Int(tapFormat.streamDescription.pointee.mBytesPerFrame)
+  guard bytesPerFrame > 0, let first = raw.first else { return }
+  let frames = AVAudioFrameCount(first.count / bytesPerFrame)
+  guard frames > 0, let input = AVAudioPCMBuffer(pcmFormat: tapFormat, frameCapacity: frames) else { return }
+  input.frameLength = frames
+  let targets = UnsafeMutableAudioBufferListPointer(input.mutableAudioBufferList)
+  for (data, target) in zip(raw, targets) where target.mData != nil {
+    data.withUnsafeBytes { bytes in
+      if let base = bytes.baseAddress { memcpy(target.mData, base, min(bytes.count, Int(target.mDataByteSize))) }
+    }
+  }
+
+  if ProcessInfo.processInfo.environment["MOVA_TAP_DEBUG"] != nil {
+    debugFrames += Int(frames)
+    if debugStart == 0 { debugStart = hostTime }
+    let elapsed = seconds(sinceStart: hostTime) - seconds(sinceStart: debugStart)
+    if elapsed >= 1 {
+      FileHandle.standardError.write("debug: \(debugFrames) frames in \(String(format: "%.2f", elapsed)) s = \(Int(Double(debugFrames) / elapsed)) Hz actual vs \(Int(tapFormat.sampleRate)) Hz declared, \(tapFormat.channelCount) ch, bytes/frame \(bytesPerFrame)\n".data(using: .utf8)!)
+      debugFrames = 0
+      debugStart = hostTime
+    }
+  }
   padSilence(upTo: seconds(sinceStart: hostTime))
   if let channels = input.floatChannelData {
     // Interleaved: every channel's samples sit in channels[0]. Planar: meter
@@ -345,17 +417,16 @@ var ioProcID: AudioDeviceIOProcID?
 check(AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, nil) { _, inputData, inputTime, _, _ in
   let stamp = inputTime.pointee
   let hostTime = stamp.mFlags.contains(.hostTimeValid) ? stamp.mHostTime : mach_absolute_time()
-  guard let view = AVAudioPCMBuffer(pcmFormat: tapFormat, bufferListNoCopy: inputData, deallocator: nil),
-    let copy = AVAudioPCMBuffer(pcmFormat: tapFormat, frameCapacity: view.frameLength)
-  else { return }
-  copy.frameLength = view.frameLength
-  let source = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: view.audioBufferList))
-  let target = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
-  for (s, t) in zip(source, target) where s.mData != nil && t.mData != nil {
-    memcpy(t.mData, s.mData, Int(min(s.mDataByteSize, t.mDataByteSize)))
-  }
-  work.async { process(copy, hostTime: hostTime) }
+  let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
+  let raw = buffers.compactMap { buffer in buffer.mData.map { Data(bytes: $0, count: Int(buffer.mDataByteSize)) } }
+  work.async { process(raw: raw, hostTime: hostTime) }
 }, "Creating the audio callback")
+
+// Format / sample-rate change notifications for the tap and the device.
+check(AudioObjectAddPropertyListenerBlock(tapID, &formatAddress, work) { _, _ in refreshFormat() }, "Watching the tap format")
+var rateAddress = AudioObjectPropertyAddress(
+  mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+check(AudioObjectAddPropertyListenerBlock(aggregateID, &rateAddress, work) { _, _ in refreshFormat() }, "Watching the sample rate")
 startHostTime = mach_absolute_time()
 emit(["event": "started", "at": Date().timeIntervalSince1970 * 1000])
 check(AudioDeviceStart(aggregateID, ioProcID), "Starting the capture")
