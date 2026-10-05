@@ -84,6 +84,7 @@ interface WhisperApi {
   system_audio_sources(): Promise<CaptureSource[]>;
   system_audio_start(appBundleId?: string): Promise<{ startedAt: number }>;
   set_recording_indicator(recording: boolean): Promise<void>;
+  on_tray_toggle_recording(callback: () => void): void;
   system_audio_stop(): Promise<Uint8Array | null>;
   on_system_audio_level(callback: (level: number) => void): void;
   check_for_updates(): Promise<UpdateState>;
@@ -294,6 +295,15 @@ async function refreshTranscribeGate(): Promise<void> {
 let activeCallLevel: ((level: number) => void) | null = null;
 window.api.on_system_audio_level((level) => activeCallLevel?.(level));
 
+// The tray's Record / Stop item presses the same button. If the Upload tab
+// isn't built yet (server off, host unreachable), showing it is the answer —
+// its banner says why recording isn't available.
+let toggleCallRecording: (() => void) | null = null;
+window.api.on_tray_toggle_recording(() => {
+  showTab('transcribe');
+  toggleCallRecording?.();
+});
+
 function wireCallRecorder(upload: (file: File) => void): void {
   const recBtn = document.getElementById('recBtn') as HTMLButtonElement;
   const timer = document.getElementById('recTimer') as HTMLSpanElement;
@@ -303,6 +313,9 @@ function wireCallRecorder(upload: (file: File) => void): void {
   const meterCall = document.getElementById('meterCall') as HTMLDivElement;
   const sourceLabel = document.getElementById('recSource') as HTMLSpanElement;
   const hintText = hint.textContent || '';
+  toggleCallRecording = () => {
+    if (!recBtn.disabled) recBtn.click();
+  };
 
   // Speech RMS rarely goes past ~0.3; scale so normal talking fills most of the bar.
   const showLevel = (meter: HTMLDivElement, level: number) => {

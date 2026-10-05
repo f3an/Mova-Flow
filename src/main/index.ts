@@ -239,21 +239,35 @@ function showMainWindow(): void {
 // running until the user explicitly chooses Exit. Same behavior on every
 // platform (Tray works the same in the Windows/Linux tray and the macOS
 // menu bar), so there's no OS check here.
-function createTray(): void {
-  tray = new Tray(path.join(__dirname, '..', '..', 'build', 'icons', '16x16.png'));
-  tray.setToolTip('Mova Flow');
-  tray.setContextMenu(
+// Mirrors the renderer's call recorder (see 'set-recording-indicator'), so
+// the tray item can say Record or Stop.
+let recordingActive = false;
+
+/** Recording itself lives in the renderer (it owns the microphone and the
+ * upload), so the tray item just presses its Record/Stop button. Starting
+ * on macOS shows the window first: the source picker opens there. */
+function toggleRecordingFromTray(): void {
+  if (!mainWindow) createWindow();
+  if (!recordingActive && process.platform === 'darwin') showMainWindow();
+  mainWindow?.webContents.send('tray-toggle-recording');
+}
+
+function updateTrayMenu(): void {
+  tray?.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Open Mova Flow', click: showMainWindow },
       { type: 'separator' },
-      {
-        label: 'Open DevTools',
-        click: () => mainWindow?.webContents.openDevTools({ mode: 'detach' }),
-      },
+      { label: recordingActive ? '■ Stop & transcribe' : '● Record a call', click: toggleRecordingFromTray },
       { type: 'separator' },
       { label: 'Exit', click: () => app.quit() },
     ]),
   );
+}
+
+function createTray(): void {
+  tray = new Tray(path.join(__dirname, '..', '..', 'build', 'icons', '16x16.png'));
+  tray.setToolTip('Mova Flow');
+  updateTrayMenu();
   tray.on('click', showMainWindow);
 }
 
@@ -545,6 +559,8 @@ ipcMain.handle('set-recording-indicator', (_evt: IpcMainInvokeEvent, recording: 
   tray?.setToolTip(recording ? 'Mova Flow — recording a call' : 'Mova Flow');
   // Text next to the menu bar icon (macOS only; ignored elsewhere).
   tray?.setTitle(recording ? ' ● REC' : '');
+  recordingActive = recording;
+  updateTrayMenu();
 });
 
 // The window hides to the tray instead of closing, so launching the app again
