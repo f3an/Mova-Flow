@@ -11,6 +11,10 @@ execFileSync(
   'xcrun',
   [
     'swiftc', '-O',
+    // Swift 5 language mode: the helper's globals are only touched from one
+    // serial queue, which Swift 6's strict checking can't see — keep its
+    // warnings warnings on whatever Xcode CI ships.
+    '-swift-version', '5',
     // Core Audio process taps exist since macOS 14.2.
     '-target', 'arm64-apple-macos14.2',
     'native/macos/audio-tap/main.swift',
