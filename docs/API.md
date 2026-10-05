@@ -48,8 +48,8 @@ Queues a file for recognition. Requires `Authorization: Bearer <token>`.
 |---|---|---|
 | `file` | File | audio file, `.mp3 .wav .ogg .flac` (anything else is rejected with `400`) |
 | `language` | string | a language code, or `auto` (the default) |
-| `speakers` | string | optional. `me-others`: the file is stereo with the uploader's own mic on the left channel and everyone else on the right — each line of the result is prefixed `Me:` or `Others:` by whichever channel was louder (lines where neither clearly dominates stay unlabeled) |
-| `speaker_timeline` | string | optional, only with `speakers=me-others`. JSON array of `{ "name", "start", "end", "words", "self"? }` — who spoke when (seconds from the start of the file, e.g. from Meet's live captions). Right-channel lines get the best-overlapping non-`self` name instead of `Others:`. Malformed entries are ignored |
+| `speakers` | string | optional. `me-others`: the file is stereo with the uploader's own mic on the left channel and everyone else on the right. For a 16-bit PCM stereo WAV, each channel is transcribed separately and the lines merged by time, prefixed `Me:` / `Others:` — so overlapping speech keeps both sides; mic lines that just repeat the call (speakers without headphones) are dropped. Any other file falls back to one pass labelled by the louder channel (`--diarize`) |
+| `speaker_timeline` | string | optional, only with `speakers=me-others`. JSON array of `{ "name", "start", "end", "words", "self"? }` — who spoke when (seconds from the start of the file, e.g. from Meet's live captions). Right-channel lines get the best-overlapping non-`self` name instead of `Others:`; the call side is then transcribed word by word so a line is cut where the speaker changes. Malformed entries are ignored |
 
 **`200` response:**
 ```json

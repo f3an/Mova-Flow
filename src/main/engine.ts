@@ -268,35 +268,25 @@ export interface TranscribeResult {
   detectedLanguage: string;
 }
 
+interface Segment {
+  start: number;
+  end: number;
+  text: string;
+}
+
 /** Spawns whisper-cli.exe as a child process (not a native binding — the same
  * lesson as the pip-worker hack in the Python version) and parses segments off
  * stdout as they stream in. */
-export function transcribe(
-  userDataDir: string,
-  modelFilePath: string,
-  filePath: string,
+function runWhisper(
+  exe: string,
+  args: string[],
   language: string,
-  onProgress: ProgressCb,
-  speakers?: SpeakerLabels,
-): Promise<TranscribeResult> {
-  const exe = cliPath(userDataDir);
-  const vPath = vadModelPath(userDataDir);
-  const useVad = fs.existsSync(vPath) ? cliSupportsVad(exe) : Promise.resolve(false);
-  return useVad.then((vad) => new Promise((resolve, reject) => {
-    // whisper-cli defaults to 'en' when -l is omitted — it does NOT auto-detect
-    // by default — so auto mode needs an explicit '-l auto' or everything gets
-    // forced through as English.
-    const args = ['-m', modelFilePath, '-f', filePath, '-l', language || 'auto'];
-    // A mono file passes through --diarize unharmed (every segment just comes
-    // back as "speaker ?"), so this needs no check on the file itself.
-    if (speakers) args.push('--diarize');
-    if (vad) args.push('--vad', '-vm', vPath);
-
+  onSegment: (segment: Segment) => void,
+): Promise<{ segments: Segment[]; detectedLanguage: string }> {
+  return new Promise((resolve, reject) => {
     const child = spawn(exe, args, { cwd: path.dirname(exe) });
-
-    const lines: string[] = [];
+    const segments: Segment[] = [];
     let detectedLanguage = language !== 'auto' ? language : '';
-    let segmentCount = 0;
     let buffer = '';
     let tail = '';
 
@@ -316,18 +306,13 @@ export function transcribe(
         const m = SEGMENT_RE.exec(line);
         if (m) {
           const [, sh, sm, ss, eh, em, es] = m;
-          let segText = m[7];
-          const startSeconds = Number(sh) * 3600 + Number(sm) * 60 + Number(ss);
-          const endSeconds = Number(eh) * 3600 + Number(em) * 60 + Number(es);
-          const speaker = SPEAKER_RE.exec(segText);
-          if (speaker && speakers) {
-            segText = segText.slice(speaker[0].length);
-            const label = speakerLabel(speaker[1], startSeconds, endSeconds, speakers);
-            if (label) segText = `${label}: ${segText}`;
-          }
-          lines.push(`[${formatTimestamp(startSeconds)}] ${segText}`);
-          segmentCount += 1;
-          onProgress(`Processed segments: ${segmentCount}`);
+          const segment = {
+            start: Number(sh) * 3600 + Number(sm) * 60 + Number(ss),
+            end: Number(eh) * 3600 + Number(em) * 60 + Number(es),
+            text: m[7],
+          };
+          segments.push(segment);
+          onSegment(segment);
         }
       }
     };
@@ -347,7 +332,195 @@ export function transcribe(
         reject(new Error('Could not read the audio file: unsupported or corrupted format.'));
         return;
       }
-      resolve({ text: lines.join('\n'), detectedLanguage: detectedLanguage || 'auto' });
+      resolve({ segments, detectedLanguage: detectedLanguage || 'auto' });
     });
-  }));
+  });
+}
+
+// ── Stereo "me / others" recordings ──────────────────────────────────────
+// Each side is transcribed on its own rather than as a mix labelled by the
+// louder channel: when both people talk at once, a mix gets only one of them
+// transcribed — and the louder channel isn't necessarily the voice Whisper
+// picked (a recording of the user talking over a video came back with the
+// video's words, the mic channel louder, and no label at all).
+
+/** Splits a 16-bit PCM stereo WAV into two mono WAVs (left, right) next to
+ * it; null if the file is anything else, so the caller can fall back. */
+function splitStereoWav(filePath: string): { left: string; right: string } | null {
+  let data: Buffer;
+  try {
+    data = fs.readFileSync(filePath);
+  } catch {
+    return null;
+  }
+  if (data.length < 44 || data.toString('ascii', 0, 4) !== 'RIFF' || data.toString('ascii', 8, 12) !== 'WAVE') return null;
+  let offset = 12;
+  let fmt: { format: number; channels: number; rate: number; bits: number } | null = null;
+  while (offset + 8 <= data.length) {
+    const id = data.toString('ascii', offset, offset + 4);
+    const size = data.readUInt32LE(offset + 4);
+    const body = offset + 8;
+    if (id === 'fmt ') {
+      fmt = { format: data.readUInt16LE(body), channels: data.readUInt16LE(body + 2), rate: data.readUInt32LE(body + 4), bits: data.readUInt16LE(body + 14) };
+    } else if (id === 'data') {
+      if (!fmt || fmt.format !== 1 || fmt.channels !== 2 || fmt.bits !== 16) return null;
+      const frames = Math.floor(Math.min(size, data.length - body) / 4);
+      const write = (channel: number, suffix: string) => {
+        const out = Buffer.alloc(44 + frames * 2);
+        out.write('RIFF', 0, 'ascii');
+        out.writeUInt32LE(36 + frames * 2, 4);
+        out.write('WAVEfmt ', 8, 'ascii');
+        out.writeUInt32LE(16, 16);
+        out.writeUInt16LE(1, 20);
+        out.writeUInt16LE(1, 22);
+        out.writeUInt32LE(fmt!.rate, 24);
+        out.writeUInt32LE(fmt!.rate * 2, 28);
+        out.writeUInt16LE(2, 32);
+        out.writeUInt16LE(16, 34);
+        out.write('data', 36, 'ascii');
+        out.writeUInt32LE(frames * 2, 40);
+        for (let i = 0; i < frames; i++) out.writeInt16LE(data.readInt16LE(body + i * 4 + channel * 2), 44 + i * 2);
+        const target = `${filePath}.${suffix}.wav`;
+        fs.writeFileSync(target, out);
+        return target;
+      };
+      return { left: write(0, 'me'), right: write(1, 'call') };
+    }
+    offset = body + size + (size % 2);
+  }
+  return null;
+}
+
+function words(text: string): Set<string> {
+  return new Set(text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean));
+}
+
+/** Without headphones the mic also hears the call from the speakers, so the
+ * same words can come back on both sides. A mic line that overlaps a call
+ * line in time and mostly repeats its words is that echo, not the user. */
+function isEcho(mine: Segment, call: Segment[]): boolean {
+  const ownWords = words(mine.text);
+  if (!ownWords.size) return true;
+  const duration = Math.max(mine.end - mine.start, 0.1);
+  return call.some((other) => {
+    const overlap = Math.min(mine.end, other.end) - Math.max(mine.start, other.start);
+    if (overlap < duration * 0.4) return false;
+    const theirs = words(other.text);
+    let shared = 0;
+    for (const w of ownWords) if (theirs.has(w)) shared++;
+    return shared / Math.min(ownWords.size, Math.max(theirs.size, 1)) >= 0.6;
+  });
+}
+
+/** With caption names, the call side is transcribed word by word (-ml 1)
+ * so a line can be cut where the captions say the speaker changed — two
+ * people talking back to back otherwise come back as one segment, all of
+ * it credited to whoever spoke longer. Words are regrouped into lines per
+ * speaker, also breaking on pauses. */
+function namedCallLines(words: Segment[], speakers: SpeakerLabels): (Segment & { label: string })[] {
+  const lines: (Segment & { label: string })[] = [];
+  for (const word of words) {
+    const text = word.text.trim();
+    if (!text) continue;
+    const label = speakerAt(speakers.timeline!, word.start, word.end) || speakers.right;
+    const last = lines[lines.length - 1];
+    if (last && last.label === label && word.start - last.end < 1.2) {
+      last.end = word.end;
+      last.text += ` ${text}`;
+    } else {
+      lines.push({ start: word.start, end: word.end, text, label });
+    }
+  }
+  return lines;
+}
+
+async function transcribeChannels(
+  exe: string,
+  argsFor: (file: string, extra?: string[]) => string[],
+  language: string,
+  files: { left: string; right: string },
+  speakers: SpeakerLabels,
+  onProgress: ProgressCb,
+): Promise<TranscribeResult> {
+  // One after the other: both at once would just fight over the GPU.
+  let count = 0;
+  onProgress('Transcribing your side...');
+  const me = await runWhisper(exe, argsFor(files.left), language, () =>
+    onProgress(`Transcribing your side... segments: ${++count}`),
+  );
+  count = 0;
+  onProgress('Transcribing the call...');
+  const named = !!speakers.timeline?.length;
+  const call = await runWhisper(exe, argsFor(files.right, named ? ['-ml', '1', '-sow'] : []), language, () =>
+    onProgress(`Transcribing the call... segments: ${++count}`),
+  );
+  const callLines = named
+    ? namedCallLines(call.segments, speakers)
+    : call.segments.map((segment) => ({ ...segment, label: speakers.right }));
+
+  const lines = [
+    ...me.segments
+      .filter((segment) => !isEcho(segment, callLines))
+      .map((segment) => ({ ...segment, label: speakers.left })),
+    ...callLines,
+  ].sort((a, b) => a.start - b.start);
+
+  // Whichever side said more decides the language reported for the file.
+  const detectedLanguage = (me.segments.length >= call.segments.length ? me : call).detectedLanguage;
+  return {
+    text: lines.map((l) => `[${formatTimestamp(l.start)}] ${l.label}: ${l.text.trim()}`).join('\n'),
+    detectedLanguage,
+  };
+}
+
+export async function transcribe(
+  userDataDir: string,
+  modelFilePath: string,
+  filePath: string,
+  language: string,
+  onProgress: ProgressCb,
+  speakers?: SpeakerLabels,
+): Promise<TranscribeResult> {
+  const exe = cliPath(userDataDir);
+  const vPath = vadModelPath(userDataDir);
+  const vad = fs.existsSync(vPath) && (await cliSupportsVad(exe));
+  // whisper-cli defaults to 'en' when -l is omitted — it does NOT auto-detect
+  // by default — so auto mode needs an explicit '-l auto' or everything gets
+  // forced through as English.
+  const argsFor = (file: string, extra: string[] = []) => [
+    '-m', modelFilePath, '-f', file, '-l', language || 'auto',
+    ...extra,
+    ...(vad ? ['--vad', '-vm', vPath] : []),
+  ];
+
+  if (speakers) {
+    const split = splitStereoWav(filePath);
+    if (split) {
+      try {
+        return await transcribeChannels(exe, argsFor, language, split, speakers, onProgress);
+      } finally {
+        fs.rmSync(split.left, { force: true });
+        fs.rmSync(split.right, { force: true });
+      }
+    }
+  }
+
+  // Everything else — and a "speakers" file that isn't a 16-bit stereo WAV —
+  // as one mix. With speakers, --diarize still labels lines by the louder
+  // channel (a mono file passes through it unharmed: every segment is "?").
+  let count = 0;
+  const { segments, detectedLanguage } = await runWhisper(exe, argsFor(filePath, speakers ? ['--diarize'] : []), language, () =>
+    onProgress(`Processed segments: ${++count}`),
+  );
+  const lines = segments.map((segment) => {
+    let text = segment.text;
+    const speaker = SPEAKER_RE.exec(text);
+    if (speaker && speakers) {
+      text = text.slice(speaker[0].length);
+      const label = speakerLabel(speaker[1], segment.start, segment.end, speakers);
+      if (label) text = `${label}: ${text}`;
+    }
+    return `[${formatTimestamp(segment.start)}] ${text}`;
+  });
+  return { text: lines.join('\n'), detectedLanguage };
 }
