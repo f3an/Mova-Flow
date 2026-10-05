@@ -132,9 +132,14 @@ export async function listCaptureSources(): Promise<CaptureSource[]> {
 }
 
 /** Starts the macOS helper — everything the system plays, or only `appBundleId`
- * — resolving with the epoch-ms the recording started; its level readings are
- * forwarded to `win` as 'system-audio-level'. */
-export function startMacSystemAudio(win: BrowserWindow, appBundleId?: string): Promise<{ startedAt: number }> {
+ * — writing a 16 kHz mono WAV to `file` (inside the recording's folder, see
+ * recordings.ts) and resolving with the epoch-ms the recording started; its
+ * level readings are forwarded to `win` as 'system-audio-level'. */
+export function startMacSystemAudio(
+  win: BrowserWindow,
+  file: string,
+  appBundleId?: string,
+): Promise<{ startedAt: number }> {
   if (process.platform !== 'darwin') return Promise.reject(new Error('macOS only'));
   if (tap) return Promise.reject(new Error('Already recording.'));
   if (!macSupportsTaps()) {
@@ -143,7 +148,6 @@ export function startMacSystemAudio(win: BrowserWindow, appBundleId?: string): P
   const exe = helperPath();
   if (!fs.existsSync(exe)) return Promise.reject(new Error(`Audio capture helper is missing (${exe}).`));
 
-  const file = path.join(app.getPath('temp'), `mova-flow-system-${Date.now()}.wav`);
   const child = spawn(exe, appBundleId ? [file, '--app', appBundleId] : [file]);
   let settled = false;
 
@@ -194,29 +198,22 @@ export function startMacSystemAudio(win: BrowserWindow, appBundleId?: string): P
   }) as Promise<{ startedAt: number }>;
 }
 
-/** Stops the helper and returns the recorded 16 kHz mono WAV, or null if
- * nothing was recording. The temp file is removed afterwards. */
-export async function stopMacSystemAudio(): Promise<Buffer | null> {
+/** Stops the helper and waits until it has finished writing its WAV (the
+ * file stays where it is — recordings.ts picks it up). */
+export async function stopMacSystemAudio(): Promise<void> {
   const current = tap;
-  if (!current) return null;
+  if (!current) return;
   tap = null;
-  current.child.stdin.end(); // the helper stops on stdin EOF
+  current.child.stdin.end(); // the helper stops on stdin EOF and closes the file
   const killTimer = setTimeout(() => current.child.kill('SIGTERM'), 5000);
   await current.stopped;
   clearTimeout(killTimer);
-  try {
-    return fs.readFileSync(current.file);
-  } catch {
-    return null;
-  } finally {
-    fs.rmSync(current.file, { force: true });
-  }
 }
 
-/** Quitting mid-recording must not leave the helper running. */
+/** Quitting mid-recording must not leave the helper running. It's asked to
+ * stop, not killed, so what it recorded so far is kept. */
 export function abortSystemAudio(): void {
   if (!tap) return;
-  tap.child.kill('SIGTERM');
-  fs.rmSync(tap.file, { force: true });
+  tap.child.stdin.end();
   tap = null;
 }

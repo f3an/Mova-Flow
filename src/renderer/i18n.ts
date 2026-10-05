@@ -73,6 +73,11 @@ const UK: Record<string, string> = {
   'job.err.unreachable': "Не вдалося зв'язатися з сервером.",
   'job.err.lostConnection': "Втрачено зв'язок із сервером",
   'job.err.unknown': 'Невідома помилка',
+  'job.retry': 'Спробувати ще раз',
+  'job.showFile': 'Показати файл',
+  'job.savedRecording': 'Запис збережено — він чекатиме в Історії, доки його не розпізнають.',
+  'job.busyRetry': 'Сервер зайнятий — зараз спробую ще раз...',
+  'rec.pending.send': 'Розпізнати',
 
   'history.title': 'Історія',
   'history.empty': 'Ще немає жодної транскрипції.',
@@ -83,6 +88,11 @@ const UK: Record<string, string> = {
   'history.hideText': 'Сховати текст',
   'history.delete': 'Видалити',
   'history.delete.confirm': 'Видалити цей запис і його транскрипцію? Це незворотно.',
+  'history.pending.recording': 'Іде запис',
+  'history.pending.sending': 'Розпізнається...',
+  'history.pending.notYet': 'Не розпізнано',
+  'history.pending.interrupted': 'відновлено після того, як програма закрилася під час запису',
+  'history.pending.deleteConfirm': 'Видалити цей запис? Його ще не розпізнано, і це незворотно.',
 
   'server.title': 'Сервер',
   'role.host.title': 'Сервер (host)',
