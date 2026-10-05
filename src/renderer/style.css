@@ -9,6 +9,13 @@
   --serif: 'Iowan Old Style', 'Georgia', serif;
 }
 
+/* Any class that sets display (flex, grid…) would otherwise beat the
+   [hidden] attribute — which left an empty update bar, idle level meters and
+   an empty scan box on screen. One rule for all of them. */
+[hidden] {
+  display: none !important;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -48,12 +55,6 @@ body {
  * does on Windows/Linux — push the title text clear of them. */
 .platform-mac .title-strip {
   padding-left: 78px;
-}
-
-/* The class's display: flex would otherwise beat the [hidden] attribute and
-   leave an empty bar on screen whenever there's no update to show. */
-.update-banner[hidden] {
-  display: none;
 }
 
 .update-progress {
@@ -605,12 +606,6 @@ body {
   font-family: var(--mono);
   font-size: 14px;
   color: var(--rust);
-}
-
-/* display: grid would otherwise beat the [hidden] attribute — the meters
-   only belong on screen while recording. */
-.rec-meters[hidden] {
-  display: none;
 }
 
 .rec-meters {

@@ -46,6 +46,8 @@ export function pickCaptureSource(load: () => Promise<CaptureSource[]>, t: Trans
     const grid = overlay.querySelector('#pickerGrid') as HTMLDivElement;
     const note = overlay.querySelector('#pickerNote') as HTMLParagraphElement;
     let selected = '';
+    // Until the user clicks a card, the selection follows the playing app.
+    let userPicked = false;
 
     const finish = (value: string | null) => {
       document.removeEventListener('keydown', onKey);
@@ -68,7 +70,9 @@ export function pickCaptureSource(load: () => Promise<CaptureSource[]>, t: Trans
 
     const render = (sources: CaptureSource[]) => {
       // Default to the app that's playing right now — most likely the call.
-      if (!selected && !grid.childElementCount) selected = sources.find((s) => s.playing)?.bundleId ?? '';
+      // (The grid is first drawn empty while the list loads, so this can't
+      // key off "first render".)
+      if (!userPicked) selected = sources.find((s) => s.playing)?.bundleId ?? selected;
       const allCard = card(
         '',
         `<div class="picker-all">🔊</div>`,
@@ -118,6 +122,7 @@ export function pickCaptureSource(load: () => Promise<CaptureSource[]>, t: Trans
       const target = (e.target as HTMLElement).closest<HTMLButtonElement>('.picker-card');
       if (!target) return;
       selected = target.dataset.value ?? '';
+      userPicked = true;
       grid.querySelectorAll('.picker-card').forEach((c) => c.classList.toggle('selected', c === target));
     });
     grid.addEventListener('dblclick', (e) => {
