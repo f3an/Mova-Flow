@@ -9,10 +9,14 @@
 //     Prints a JSON array of apps that have audio streams right now:
 //     [{"bundleId":"us.zoom.xos","name":"zoom.us","playing":true,
 //       "icon":"<base64 PNG>","windowIds":[1234, …]}, …]
-//     windowIds are the app's windows, largest first — the IDs
-//     Electron's desktopCapturer uses ("window:<id>:0"), so the app can show
-//     a thumbnail of each. Window owners are readable without the Screen
-//     Recording permission; only the thumbnails themselves need it.
+//     windowIds are the app's windows (CGWindowIDs), largest first, for
+//     `thumbs`. Window owners are readable without the Screen Recording
+//     permission; only the thumbnails themselves need it.
+//   mova-audio-tap thumbs <windowId>...
+//     Prints {"<windowId>":"<base64 JPEG>", …}: a small snapshot of each
+//     window via ScreenCaptureKit, which (unlike Electron's desktopCapturer)
+//     also sees windows on other Spaces. Needs Screen Recording access;
+//     windows it can't capture are simply left out.
 //   mova-audio-tap <out.wav> [--app <bundleId>]
 //     Records everything the system plays — or only that app (and its helper
 //     processes) — as 16 kHz mono 16-bit WAV (what whisper-cli reads; ~115
@@ -27,6 +31,7 @@ import AppKit
 import AVFoundation
 import CoreAudio
 import Foundation
+import ScreenCaptureKit
 
 setvbuf(stdout, nil, _IOLBF, 0)
 
@@ -166,6 +171,7 @@ func listApps() -> Never {
         "bundleId": id,
         "name": entry.app.localizedName ?? id,
         "playing": entry.playing,
+        "pid": entry.app.processIdentifier,
         "windowIds": windowIds(of: entry.app.processIdentifier),
       ]
       if let icon = iconPNG(entry.app) { item["icon"] = icon }
@@ -179,8 +185,35 @@ func listApps() -> Never {
   exit(0)
 }
 
+func printThumbnails(_ ids: [CGWindowID]) -> Never {
+  // ScreenCaptureKit needs a window-server connection, which a plain
+  // command-line process only gets once AppKit is initialized.
+  _ = NSApplication.shared
+  Task {
+    var result: [String: String] = [:]
+    if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) {
+      for window in content.windows where ids.contains(window.windowID) {
+        let config = SCStreamConfiguration()
+        let scale = min(480 / max(window.frame.width, 1), 300 / max(window.frame.height, 1), 1)
+        config.width = max(Int(window.frame.width * scale), 1)
+        config.height = max(Int(window.frame.height * scale), 1)
+        config.showsCursor = false
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config),
+          let jpeg = NSBitmapImageRep(cgImage: image).representation(using: .jpeg, properties: [.compressionFactor: 0.7])
+        else { continue }
+        result[String(window.windowID)] = jpeg.base64EncodedString()
+      }
+    }
+    if let data = try? JSONSerialization.data(withJSONObject: result), let text = String(data: data, encoding: .utf8) { print(text) }
+    exit(0)
+  }
+  dispatchMain()
+}
+
 let arguments = Array(CommandLine.arguments.dropFirst())
 if arguments.first == "list" { listApps() }
+if arguments.first == "thumbs" { printThumbnails(arguments.dropFirst().compactMap { CGWindowID($0) }) }
 guard let outPath = arguments.first else { fail("usage: mova-audio-tap list | mova-audio-tap <out.wav> [--app <bundleId>]") }
 let outURL = URL(fileURLWithPath: outPath)
 var onlyApp: String?

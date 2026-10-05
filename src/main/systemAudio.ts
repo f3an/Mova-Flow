@@ -53,7 +53,9 @@ export interface AudioApp {
   playing: boolean;
   /** base64 PNG, 64 px. */
   icon?: string;
-  /** The app's windows, largest first — desktopCapturer's "window:<id>:0". */
+  /** The app's main process. */
+  pid: number;
+  /** The app's windows (CGWindowIDs), largest first. */
   windowIds: number[];
 }
 
@@ -76,8 +78,9 @@ export function listMacAudioApps(): Promise<AudioApp[]> {
       if (err) return resolve([]);
       try {
         const apps = JSON.parse(stdout) as AudioApp[];
-        // Never offer recording Mova Flow itself.
-        resolve(apps.filter((a) => a.bundleId !== 'com.movaflow.app'));
+        // Never offer recording Mova Flow itself (whatever its bundle ID —
+        // a dev run is "Electron").
+        resolve(apps.filter((a) => a.pid !== process.pid));
       } catch {
         resolve([]);
       }
@@ -87,6 +90,22 @@ export function listMacAudioApps(): Promise<AudioApp[]> {
 
 let tap: { child: ChildProcessWithoutNullStreams; file: string; stopped: Promise<void> } | null = null;
 
+/** Snapshots of the given windows from the helper (ScreenCaptureKit), as
+ * base64 JPEG by window ID. Unlike desktopCapturer, this also sees windows
+ * on other Spaces — where a call window often is while the user works. */
+function windowThumbnails(windowIds: number[]): Promise<Record<string, string>> {
+  if (!windowIds.length) return Promise.resolve({});
+  return new Promise((resolve) => {
+    execFile(helperPath(), ['thumbs', ...windowIds.map(String)], { timeout: 10000, maxBuffer: 32 * 1024 * 1024 }, (err, stdout) => {
+      try {
+        resolve(err ? {} : JSON.parse(stdout));
+      } catch {
+        resolve({});
+      }
+    });
+  });
+}
+
 /** Apps with audio, each with a thumbnail of its largest window. Thumbnails
  * need the Screen Recording permission on macOS — asked for once, the first
  * time; nothing is recorded with it, it only renders these previews. Without
@@ -95,26 +114,21 @@ export async function listCaptureSources(): Promise<CaptureSource[]> {
   const apps = await listMacAudioApps();
   if (!apps.length) return [];
 
-  const thumbnails = new Map<number, string>();
-  if (systemPreferences.getMediaAccessStatus('screen') !== 'denied') {
-    try {
-      const windows = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 480, height: 300 } });
-      for (const win of windows) {
-        const id = Number(win.id.split(':')[1]);
-        if (!win.thumbnail.isEmpty()) thumbnails.set(id, win.thumbnail.toDataURL());
-      }
-    } catch {
-      /* no access — icons only */
-    }
-  }
+  // A few of each app's largest windows: the biggest one may be minimized
+  // or otherwise uncapturable.
+  const candidates = apps.flatMap((app) => app.windowIds.slice(0, 3));
+  const thumbnails = systemPreferences.getMediaAccessStatus('screen') === 'denied' ? {} : await windowThumbnails(candidates);
 
-  return apps.map((app) => ({
-    bundleId: app.bundleId,
-    name: app.name,
-    playing: app.playing,
-    icon: app.icon ? `data:image/png;base64,${app.icon}` : undefined,
-    thumbnail: app.windowIds.map((id) => thumbnails.get(id)).find(Boolean),
-  }));
+  return apps.map((app) => {
+    const shot = app.windowIds.slice(0, 3).map((id) => thumbnails[String(id)]).find(Boolean);
+    return {
+      bundleId: app.bundleId,
+      name: app.name,
+      playing: app.playing,
+      icon: app.icon ? `data:image/png;base64,${app.icon}` : undefined,
+      thumbnail: shot ? `data:image/jpeg;base64,${shot}` : undefined,
+    };
+  });
 }
 
 /** Starts the macOS helper — everything the system plays, or only `appBundleId`
