@@ -4,7 +4,7 @@ import { execFile, spawn } from 'child_process';
 import { downloadFile } from './download';
 import { downloadGhcrArtifact } from './ghcr';
 import { SpeakerTurn, speakerAt } from './speakerNames';
-import { fixOtherLanguages, MixedLanguageTools, readJsonWords, Word, wordTimes } from './mixedLanguage';
+import { fixOtherLanguages, isPcmFormat, MixedLanguageTools, readJsonWords, Word, wordTimes } from './mixedLanguage';
 import { applyReplacements, EMPTY_VOCABULARY, Vocabulary, vocabularyPrompt } from './vocabulary';
 
 // Precompiled Windows builds of whisper.cpp are published under build tags
@@ -390,7 +390,7 @@ function splitStereoWav(filePath: string): { left: string; right: string } | nul
     const size = data.readUInt32LE(offset + 4);
     const body = offset + 8;
     if (id === 'fmt ') {
-      fmt = { format: data.readUInt16LE(body), channels: data.readUInt16LE(body + 2), rate: data.readUInt32LE(body + 4), bits: data.readUInt16LE(body + 14) };
+      fmt = { format: isPcmFormat(data, body, size) ? 1 : data.readUInt16LE(body), channels: data.readUInt16LE(body + 2), rate: data.readUInt32LE(body + 4), bits: data.readUInt16LE(body + 14) };
     } else if (id === 'data') {
       if (!fmt || fmt.format !== 1 || fmt.channels !== 2 || fmt.bits !== 16) return null;
       const frames = Math.floor(Math.min(size, data.length - body) / 4);

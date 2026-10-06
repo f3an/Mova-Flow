@@ -75,6 +75,13 @@ function run(exe: string, args: string[]): Promise<string> {
   });
 }
 
+/** Plain PCM (1), or WAVE_FORMAT_EXTENSIBLE (0xFFFE) whose sub-format is
+ * PCM — what macOS afconvert and many recorders write. */
+export function isPcmFormat(data: Buffer, fmtBody: number, fmtSize: number): boolean {
+  const tag = data.readUInt16LE(fmtBody);
+  return tag === 1 || (tag === 0xfffe && fmtSize >= 40 && data.readUInt16LE(fmtBody + 24) === 1);
+}
+
 /** A 16-bit PCM WAV as 16 kHz mono (channels averaged, other rates
  * resampled linearly — plenty for telling languages apart); null for any
  * other format (an mp3 sent straight to the API), which skips the check. */
@@ -93,7 +100,7 @@ export function readWavMono16k(file: string): Int16Array | null {
     const size = data.readUInt32LE(offset + 4);
     const body = offset + 8;
     if (id === 'fmt ') {
-      if (data.readUInt16LE(body) !== 1 || data.readUInt16LE(body + 14) !== 16) return null;
+      if (!isPcmFormat(data, body, size) || data.readUInt16LE(body + 14) !== 16) return null;
       fmt = { channels: data.readUInt16LE(body + 2), rate: data.readUInt32LE(body + 4) };
     } else if (id === 'data') {
       if (!fmt || !fmt.channels || !fmt.rate) return null;
@@ -274,6 +281,7 @@ export async function fixOtherLanguages(
   const pcm = readWavMono16k(wavFile);
   if (!pcm) return words;
   const clip = path.join(tools.tmpDir, `mixed-${process.pid}-${Date.now()}.wav`);
+  if (process.env.MOVA_DUMP_LANG) await dumpWindows(tools, pcm, clip, words, mainLang, wavFile);
 
   // 1. Windows the first pass was unsure of. Each is decided on its own:
   // merged with its neighbours, a Ukrainian sentence next to an English
@@ -338,4 +346,42 @@ export async function fixOtherLanguages(
     fs.rmSync(clip, { force: true });
   }
   return result;
+}
+
+/** Evaluation only (MOVA_DUMP_LANG=<file>): appends one JSON line per
+ * window of `words` — every window, not just suspects — with the first
+ * pass's score, both decodes and what tiny hears, so the thresholds above
+ * can be tuned offline against labelled recordings. */
+async function dumpWindows(
+  tools: MixedLanguageTools,
+  pcm: Int16Array,
+  clip: string,
+  words: Word[],
+  mainLang: string,
+  wavFile: string,
+): Promise<void> {
+  const other = mainLang === 'en' ? null : 'en';
+  for (const w of speechWindows(words)) {
+    if (w.end - w.start < 1) continue;
+    const from = Math.max(0, w.start - 0.3);
+    writeWav(clip, slice(pcm, from, w.end + 0.3));
+    const heard = fs.existsSync(tools.tinyModel) ? await detect(tools, clip) : null;
+    const main = await decode(tools, clip, mainLang);
+    const alt = other ? await decode(tools, clip, other) : null;
+    const row = {
+      file: path.basename(wavFile),
+      start: w.start,
+      end: w.end,
+      speech: w.spans.reduce((n, [a, b]) => n + b - a, 0),
+      first: score(w.words),
+      firstText: w.words.map((x) => x.text).join('').trim(),
+      main: main.score,
+      mainText: main.words.map((x) => x.text).join('').trim(),
+      alt: alt?.score ?? null,
+      altText: alt ? alt.words.map((x) => x.text).join('').trim() : null,
+      tiny: heard?.lang ?? null,
+      tinyP: heard?.p ?? null,
+    };
+    fs.appendFileSync(process.env.MOVA_DUMP_LANG!, `${JSON.stringify(row)}\n`);
+  }
 }
