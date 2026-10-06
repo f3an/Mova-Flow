@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
 
@@ -69,6 +70,8 @@ const SUSPECT = -0.2;
 /** Too short to tell a language by — a mumbled "Ви ж, по" came back as
  * "Yeah, yeah." with tiny agreeing. */
 const MIN_S = 4;
+/** tiny processes run at once — a small model, they barely compete. */
+const TINY_JOBS = Math.max(2, Math.min(4, os.cpus().length >> 1));
 /** Shorter than this, confidence alone isn't enough to switch (see below). */
 const SHORT_S = 10;
 /** How much more confident the other language's decode has to be. */
@@ -300,74 +303,99 @@ export async function fixOtherLanguages(
   // tiny gives it away. Each window is decided on its own: merged with its
   // neighbours, a Ukrainian sentence next to an English answer was carried
   // into English along with it.
+  //
+  // A pipeline: tiny runs on several windows at once (it's small; they
+  // barely compete), and a window that needs a second look goes straight
+  // into a queue for the main model, which runs one decode at a time — two
+  // copies of large-v3 would only fight over the GPU. The windows don't
+  // overlap, so the replacements are applied together at the end and the
+  // order things finish in doesn't matter.
   const hasTiny = fs.existsSync(tools.tinyModel);
   const family = FAMILIES.find((f) => f.includes(mainLang)) ?? [mainLang];
   const windows = speechWindows(words).filter((w) => w.end - w.start >= MIN_S);
-  const suspects: { start: number; end: number; heard: { lang: string; p: number } | null }[] = [];
-  for (const [i, w] of windows.entries()) {
-    onProgress(`Checking for other languages... ${i + 1}/${windows.length}`);
+  const clipOf = (i: number) => clip.replace(/\.wav$/, `-${i}.wav`);
+  const replacements: { start: number; end: number; words: Word[] }[] = [];
+  let checked = 0;
+  let mainQueue: Promise<void> = Promise.resolve();
+
+  const recheck = async (i: number, w: Window, heard: { lang: string; p: number } | null): Promise<void> => {
+    let others = mainLang === 'en' ? [] : ['en'];
+    if (mainLang === 'en' && heard && heard.lang !== 'en') {
+      others = FAMILIES.find((f) => f.includes(heard.lang)) ?? [heard.lang];
+    }
+    // A few seconds of mumbling ("Ну, вейджеш,") decode badly in any
+    // language, and the made-up English sometimes scores higher ("Well,
+    // it's not that bad."). A short window only switches if the tiny model
+    // hears that language too — on one speaker's side it does tell
+    // accented English from Ukrainian.
+    if (w.end - w.start < SHORT_S && hasTiny) others = others.filter((lang) => heard?.lang === lang);
+    if (!others.length) {
+      debug(`suspect ${fmt(w.start)}-${fmt(w.end)}: tiny hears ${heard?.lang ?? '?'} — kept`);
+      return;
+    }
+    const from = Math.max(0, w.start - 0.3);
+    const file = clipOf(i);
+    writeWav(file, slice(pcm, from, w.end + 0.3));
+    const main = await decode(tools, file, mainLang);
+    let best = main;
+    for (const lang of others) {
+      const other = await decode(tools, file, lang);
+      debug(`  ${lang}=${other.score.toFixed(2)}`, other.words.map((x) => x.text).join('').slice(0, 80));
+      if (other.words.length && other.score > best.score + MARGIN) best = other;
+    }
+    fs.rmSync(file, { force: true });
+    debug(
+      `suspect ${fmt(w.start)}-${fmt(w.end)}: ${mainLang}=${main.score.toFixed(2)}`,
+      others.join(','),
+      best === main ? 'kept' : `switched (best=${best.score.toFixed(2)})`,
+    );
+    if (best !== main) {
+      replacements.push({
+        start: w.start,
+        end: w.end,
+        words: best.words.map((x) => ({ ...x, start: x.start + from, end: x.end + from })),
+      });
+    }
+  };
+
+  const look = async (i: number): Promise<void> => {
+    const w = windows[i];
     let heard: { lang: string; p: number } | null = null;
     if (hasTiny) {
-      writeWav(clip, slice(pcm, Math.max(0, w.start - 0.3), w.end + 0.3));
-      heard = await detect(tools, clip);
+      const file = clipOf(i);
+      writeWav(file, slice(pcm, Math.max(0, w.start - 0.3), w.end + 0.3));
+      heard = await detect(tools, file);
+      fs.rmSync(file, { force: true });
     }
+    onProgress(`Checking for other languages... ${++checked}/${windows.length}`);
     const unsure = score(w.words) < SUSPECT;
     const sounds = !!heard && !family.includes(heard.lang);
     debug(`window ${fmt(w.start)}-${fmt(w.end)} score=${score(w.words).toFixed(2)} tiny=${heard?.lang ?? '-'}`);
-    if (unsure || sounds) suspects.push({ start: w.start, end: w.end, heard });
+    if (unsure || sounds) mainQueue = mainQueue.then(() => recheck(i, w, heard));
+  };
+
+  try {
+    let next = 0;
+    const lane = async () => {
+      while (next < windows.length) await look(next++);
+    };
+    await Promise.all(Array.from({ length: Math.min(TINY_JOBS, windows.length) }, lane));
+    await mainQueue;
+  } finally {
+    windows.forEach((_, i) => fs.rmSync(clipOf(i), { force: true }));
   }
 
-  // 2. Each decoded again; the most confident decode wins.
   let result = words;
-  try {
-    for (const [i, c] of suspects.entries()) {
-      onProgress(`Checking for other languages... ${mainLang} ${i + 1}/${suspects.length}`);
-      const from = Math.max(0, c.start - 0.3);
-      writeWav(clip, slice(pcm, from, c.end + 0.3));
-      const heard = c.heard;
-      let others = mainLang === 'en' ? [] : ['en'];
-      if (mainLang === 'en' && heard && heard.lang !== 'en') {
-        others = FAMILIES.find((f) => f.includes(heard.lang)) ?? [heard.lang];
-      }
-      if (!others.length) continue;
-      // A few seconds of mumbling ("Ну, вейджеш,") decode badly in any
-      // language, and the made-up English sometimes scores higher ("Well,
-      // it's not that bad."). A short window only switches if the tiny model
-      // hears that language too — on one speaker's side it does tell
-      // accented English from Ukrainian.
-      if (c.end - c.start < SHORT_S && hasTiny) {
-        others = others.filter((lang) => heard?.lang === lang);
-        if (!others.length) {
-          debug(`suspect ${fmt(c.start)}-${fmt(c.end)}: short, tiny hears ${heard?.lang ?? '?'} — kept`);
-          continue;
-        }
-      }
-      const main = await decode(tools, clip, mainLang);
-      let best = main;
-      for (const lang of others) {
-        const other = await decode(tools, clip, lang);
-        debug(`  ${lang}=${other.score.toFixed(2)}`, other.words.map((x) => x.text).join('').slice(0, 80));
-        if (other.words.length && other.score > best.score + MARGIN) best = other;
-      }
-      debug(
-        `suspect ${fmt(c.start)}-${fmt(c.end)}: ${mainLang}=${main.score.toFixed(2)}`,
-        others.map((l) => l).join(','),
-        best === main ? 'kept' : `switched (best=${best.score.toFixed(2)})`,
-      );
-      if (best === main) continue;
-      const moved = best.words.map((w) => ({ ...w, start: w.start + from, end: w.end + from }));
-      result = [
-        ...result.filter((w) => {
-          const t = wordTimes(w);
-          return t.end <= c.start - 0.05 || t.start >= c.end + 0.05;
-        }),
-        ...moved,
-      ].sort((a, b) => a.start - b.start);
-    }
-  } finally {
-    fs.rmSync(clip, { force: true });
+  for (const r of replacements) {
+    result = [
+      ...result.filter((x) => {
+        const t = wordTimes(x);
+        return t.end <= r.start - 0.05 || t.start >= r.end + 0.05;
+      }),
+      ...r.words,
+    ];
   }
-  return result;
+  return result.sort((a, b) => a.start - b.start);
 }
 
 /** Evaluation only (MOVA_DUMP_LANG=<file>): appends one JSON line per
