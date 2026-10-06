@@ -54,15 +54,25 @@ const TURN_GAP_S = 3;
 /** tiny confuses these with each other; a switch between them isn't worth
  * the second look (and is rarely mid-conversation anyway). */
 const FAMILIES = [['uk', 'ru', 'be']];
+// The thresholds below were tuned on window features dumped with
+// MOVA_DUMP_LANG: ~94 min of labelled conversations built from FLEURS and
+// VoxPopuli (uk/ru with English blocks, stereo and mono, uk-ru and uk-pl),
+// a real 90-minute interview with an English part, and 30 min of real
+// recordings with no switch. They're the settings that changed no
+// main-language speech anywhere while finding the most English: 81% on
+// held-out conversations (51% before the tiny gate), 100% on the interview.
+// Lowering MIN_S or SHORT_S broke Ukrainian on the interview; MARGIN 0.05
+// turned a Polish passage into English.
+
 /** A window this unsure of itself may be another language. */
-const SUSPECT = -0.25;
+const SUSPECT = -0.2;
 /** Too short to tell a language by — a mumbled "Ви ж, по" came back as
  * "Yeah, yeah." with tiny agreeing. */
 const MIN_S = 4;
 /** Shorter than this, confidence alone isn't enough to switch (see below). */
 const SHORT_S = 10;
 /** How much more confident the other language's decode has to be. */
-const MARGIN = 0.05;
+const MARGIN = 0.1;
 
 function run(exe: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -283,28 +293,41 @@ export async function fixOtherLanguages(
   const clip = path.join(tools.tmpDir, `mixed-${process.pid}-${Date.now()}.wav`);
   if (process.env.MOVA_DUMP_LANG) await dumpWindows(tools, pcm, clip, words, mainLang, wavFile);
 
-  // 1. Windows the first pass was unsure of. Each is decided on its own:
-  // merged with its neighbours, a Ukrainian sentence next to an English
-  // answer was carried into English along with it.
-  const suspects: { start: number; end: number }[] = [];
-  for (const w of speechWindows(words)) {
-    debug(`window ${fmt(w.start)}-${fmt(w.end)} score=${score(w.words).toFixed(2)}`, w.words.map((x) => x.text).join('').slice(0, 60));
-    if (w.end - w.start < MIN_S) continue;
-    if (score(w.words) >= SUSPECT) continue;
-    suspects.push({ start: w.start, end: w.end });
+  // 1. Which windows to look at again: those the first pass was unsure of,
+  // and those where tiny hears a language outside the main one's family —
+  // forced into Ukrainian, English is often decoded with confidence that
+  // looks fine (a translation of accented English scored -0.13), and only
+  // tiny gives it away. Each window is decided on its own: merged with its
+  // neighbours, a Ukrainian sentence next to an English answer was carried
+  // into English along with it.
+  const hasTiny = fs.existsSync(tools.tinyModel);
+  const family = FAMILIES.find((f) => f.includes(mainLang)) ?? [mainLang];
+  const windows = speechWindows(words).filter((w) => w.end - w.start >= MIN_S);
+  const suspects: { start: number; end: number; heard: { lang: string; p: number } | null }[] = [];
+  for (const [i, w] of windows.entries()) {
+    onProgress(`Checking for other languages... ${i + 1}/${windows.length}`);
+    let heard: { lang: string; p: number } | null = null;
+    if (hasTiny) {
+      writeWav(clip, slice(pcm, Math.max(0, w.start - 0.3), w.end + 0.3));
+      heard = await detect(tools, clip);
+    }
+    const unsure = score(w.words) < SUSPECT;
+    const sounds = !!heard && !family.includes(heard.lang);
+    debug(`window ${fmt(w.start)}-${fmt(w.end)} score=${score(w.words).toFixed(2)} tiny=${heard?.lang ?? '-'}`);
+    if (unsure || sounds) suspects.push({ start: w.start, end: w.end, heard });
   }
 
   // 2. Each decoded again; the most confident decode wins.
   let result = words;
   try {
     for (const [i, c] of suspects.entries()) {
-      onProgress(`Checking for other languages... ${i + 1}/${suspects.length}`);
+      onProgress(`Checking for other languages... ${mainLang} ${i + 1}/${suspects.length}`);
       const from = Math.max(0, c.start - 0.3);
       writeWav(clip, slice(pcm, from, c.end + 0.3));
+      const heard = c.heard;
       let others = mainLang === 'en' ? [] : ['en'];
-      if (mainLang === 'en' && fs.existsSync(tools.tinyModel)) {
-        const heard = await detect(tools, clip);
-        if (heard && heard.lang !== 'en') others = FAMILIES.find((f) => f.includes(heard.lang)) ?? [heard.lang];
+      if (mainLang === 'en' && heard && heard.lang !== 'en') {
+        others = FAMILIES.find((f) => f.includes(heard.lang)) ?? [heard.lang];
       }
       if (!others.length) continue;
       // A few seconds of mumbling ("Ну, вейджеш,") decode badly in any
@@ -312,8 +335,7 @@ export async function fixOtherLanguages(
       // it's not that bad."). A short window only switches if the tiny model
       // hears that language too — on one speaker's side it does tell
       // accented English from Ukrainian.
-      if (c.end - c.start < SHORT_S && fs.existsSync(tools.tinyModel)) {
-        const heard = await detect(tools, clip);
+      if (c.end - c.start < SHORT_S && hasTiny) {
         others = others.filter((lang) => heard?.lang === lang);
         if (!others.length) {
           debug(`suspect ${fmt(c.start)}-${fmt(c.end)}: short, tiny hears ${heard?.lang ?? '?'} — kept`);
