@@ -126,27 +126,56 @@ function writeWav(file: string, samples: Int16Array): void {
 const slice = (pcm: Int16Array, from: number, to: number) =>
   pcm.subarray(Math.max(0, Math.floor(from * SAMPLE_RATE)), Math.min(pcm.length, Math.ceil(to * SAMPLE_RATE)));
 
-/** Spans of speech (words closer than 1 s joined), grouped into windows of
- * up to WINDOW_S seconds of speech each. */
-function speechWindows(words: Word[]): { start: number; end: number; spans: [number, number][] }[] {
-  const spans: [number, number][] = [];
+/** Longer than any real word: the rest is a pause Whisper hung on it. */
+const MAX_WORD_S = 1.5;
+
+/** A word's real time: Whisper stretches the word next to a pause over it
+ * (on the interview, one word ran 19 s) — the first word after the pause
+ * (a new sentence, capitalized) or the last one before it. */
+export function wordTimes(w: Word): { start: number; end: number } {
+  if (w.end - w.start <= MAX_WORD_S) return { start: w.start, end: w.end };
+  return /^\p{Lu}/u.test(w.text.trim())
+    ? { start: w.end - MAX_WORD_S, end: w.end }
+    : { start: w.start, end: w.start + MAX_WORD_S };
+}
+
+interface Window {
+  start: number;
+  end: number;
+  spans: [number, number][];
+  words: Word[];
+}
+
+/** Speech (words closer than 1 s joined) grouped into windows of up to
+ * WINDOW_S seconds of it. Stretched words are trimmed first and long runs
+ * of speech split: otherwise a word stretched over the other side's turn
+ * glued a Ukrainian answer to the English one after it, and the English
+ * drowned in a window that looked confident overall. */
+function speechWindows(words: Word[]): Window[] {
+  const spans: { start: number; end: number; words: Word[] }[] = [];
   for (const w of words) {
     if (!w.text.trim()) continue;
+    const t = wordTimes(w);
     const last = spans[spans.length - 1];
-    if (last && w.start - last[1] < 1) last[1] = Math.max(last[1], w.end);
-    else spans.push([w.start, w.end]);
+    if (last && t.start - last.end < 1 && t.end - last.start <= WINDOW_S) {
+      last.end = Math.max(last.end, t.end);
+      last.words.push(w);
+    } else {
+      spans.push({ start: t.start, end: t.end, words: [w] });
+    }
   }
-  const windows: { start: number; end: number; spans: [number, number][] }[] = [];
+  const windows: Window[] = [];
   let speech = 0;
   for (const span of spans) {
-    const length = span[1] - span[0];
+    const length = span.end - span.start;
     const last = windows[windows.length - 1];
     if (last && speech + length <= WINDOW_S) {
-      last.spans.push(span);
-      last.end = span[1];
+      last.spans.push([span.start, span.end]);
+      last.words.push(...span.words);
+      last.end = span.end;
       speech += length;
     } else {
-      windows.push({ start: span[0], end: span[1], spans: [span] });
+      windows.push({ start: span.start, end: span.end, spans: [[span.start, span.end]], words: [...span.words] });
       speech = length;
     }
   }
@@ -223,7 +252,7 @@ export async function fixOtherLanguages(
   const suspects: { start: number; end: number }[] = [];
   for (const w of speechWindows(words)) {
     if (w.end - w.start < 2) continue;
-    if (score(words.filter((x) => x.start >= w.start && x.end <= w.end)) >= SUSPECT) continue;
+    if (score(w.words) >= SUSPECT) continue;
     const last = suspects[suspects.length - 1];
     if (last && w.start - last.end < 5) last.end = w.end;
     else suspects.push({ start: w.start, end: w.end });
@@ -251,7 +280,10 @@ export async function fixOtherLanguages(
       if (best === main) continue;
       const moved = best.words.map((w) => ({ ...w, start: w.start + from, end: w.end + from }));
       result = [
-        ...result.filter((w) => w.end <= c.start - 0.05 || w.start >= c.end + 0.05),
+        ...result.filter((w) => {
+          const t = wordTimes(w);
+          return t.end <= c.start - 0.05 || t.start >= c.end + 0.05;
+        }),
         ...moved,
       ].sort((a, b) => a.start - b.start);
     }
