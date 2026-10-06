@@ -4,7 +4,7 @@ import { execFile, spawn } from 'child_process';
 import { downloadFile } from './download';
 import { downloadGhcrArtifact } from './ghcr';
 import { SpeakerTurn, speakerAt } from './speakerNames';
-import { fixOtherLanguages, MixedLanguageTools, readJsonWords, Word } from './mixedLanguage';
+import { fixOtherLanguages, MixedLanguageTools, readJsonWords, Word, wordTimes } from './mixedLanguage';
 import { applyReplacements, EMPTY_VOCABULARY, Vocabulary, vocabularyPrompt } from './vocabulary';
 
 // Precompiled Windows builds of whisper.cpp are published under build tags
@@ -462,8 +462,6 @@ function isEcho(mine: Segment, call: Segment[]): boolean {
 // show where the pause is: whisper stretches a word next to it — the first
 // word after it (a new sentence, capitalized) or the last one before it.
 const PAUSE_S = 1.2;
-/** Longer than any real word: the rest is the pause before it. */
-const MAX_WORD_S = 1.5;
 /** A line this long is cut at the next sentence end. */
 const LONG_LINE_S = 20;
 
@@ -474,11 +472,7 @@ function wordsToLines(words: Segment[], labelOf: (start: number, end: number) =>
   for (const word of words) {
     const text = word.text.trim();
     if (!text) continue;
-    let { start, end } = word;
-    if (end - start > MAX_WORD_S) {
-      if (/^\p{Lu}/u.test(text)) start = end - MAX_WORD_S;
-      else end = start + MAX_WORD_S;
-    }
+    const { start, end } = wordTimes(word);
     const label = labelOf(start, end);
     const last = lines[lines.length - 1];
     const joins =
