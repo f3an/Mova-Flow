@@ -138,6 +138,41 @@ export function detectGpu(): Promise<boolean> {
 /** Unzips via each OS's own built-in tool — avoids an npm dependency like
  * extract-zip, which has an unpatched symlink vulnerability. Windows uses
  * PowerShell's Expand-Archive; macOS ships `unzip` out of the box. */
+/** Wherever the archive put whisper-cli, moves it to cliPath(). The macOS
+ * artifact was rebuilt with a bin/ folder inside (bin/bin/whisper-cli once
+ * extracted into bin/), which broke every new Mac host install with
+ * "ENOENT ... chmod .../engine/bin/whisper-cli". Also repairs an install
+ * left in that state. */
+export function placeCli(userDataDir: string): void {
+  const target = cliPath(userDataDir);
+  if (fs.existsSync(target)) return;
+  const name = path.basename(target);
+  const find = (dir: string, depth: number): string | null => {
+    if (depth > 4) return null;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+    for (const e of entries) if (e.isFile() && e.name === name) return path.join(dir, e.name);
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const found = find(path.join(dir, e.name), depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+  const found = find(binDir(userDataDir), 0);
+  if (!found) throw new Error(`The recognition engine archive has no ${name}.`);
+  // Everything next to it moves along: on Windows the DLLs it needs sit in
+  // the same folder.
+  const from = path.dirname(found);
+  const to = path.dirname(target);
+  fs.mkdirSync(to, { recursive: true });
+  for (const entry of fs.readdirSync(from)) fs.renameSync(path.join(from, entry), path.join(to, entry));
+}
+
 function expandArchive(zipPath: string, destDir: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const [cmd, args] =
@@ -160,6 +195,16 @@ function expandArchive(zipPath: string, destDir: string): Promise<void> {
 export async function ensureEngine(userDataDir: string, model: ModelChoice, onProgress: ProgressCb): Promise<void> {
   const eDir = engineDir(userDataDir);
   fs.mkdirSync(eDir, { recursive: true });
+
+  // An install left by the bin/bin/ archive layout (see placeCli).
+  if (!fs.existsSync(cliPath(userDataDir))) {
+    try {
+      placeCli(userDataDir);
+      if (process.platform === 'darwin') fs.chmodSync(cliPath(userDataDir), 0o755);
+    } catch {
+      // nothing usable there — download below
+    }
+  }
 
   if (!fs.existsSync(cliPath(userDataDir))) {
     if (process.platform !== 'win32' && process.platform !== 'darwin') {
@@ -193,6 +238,7 @@ export async function ensureEngine(userDataDir: string, model: ModelChoice, onPr
     fs.mkdirSync(binDir(userDataDir), { recursive: true });
     await expandArchive(zipPath, binDir(userDataDir));
     fs.unlinkSync(zipPath);
+    placeCli(userDataDir);
 
     if (process.platform === 'darwin') fs.chmodSync(cliPath(userDataDir), 0o755);
   }
