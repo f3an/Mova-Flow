@@ -3,8 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Mova Flow — local speech-to-text, powered by Whisper</title>
-<meta name="description" content="An open-source Electron app for local, offline speech-to-text transcription built on whisper.cpp. No cloud, no Python — one machine with a GPU transcribes, other devices on your network connect as clients.">
+<title>Mova Flow — your calls, transcribed on your own machines</title>
+<meta name="description" content="Free, open-source call transcription with Whisper that runs entirely on your own machines. Record Zoom, Teams, Telegram and Google Meet, label who said what, and let one PC with a GPU transcribe for every laptop on your network. No cloud.">
+<meta property="og:title" content="Mova Flow — your calls, transcribed on your own machines">
+<meta property="og:description" content="Free, open-source call transcription with Whisper. No cloud — one GPU host for your whole network.">
 <style>
   :root {
     --ink: #1a1d1a;
@@ -17,224 +19,148 @@
     --muted: #6b6858;
     --mono: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
     --serif: 'Iowan Old Style', 'Georgia', serif;
-    padding-top: env(safe-area-inset-top, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   * { box-sizing: border-box; }
   img { max-width: 100%; }
   [hidden] { display: none !important; }
-
+  html { scroll-behavior: smooth; }
   body {
     margin: 0;
     background: var(--paper);
     color: var(--ink);
     font-family: var(--serif);
     line-height: 1.55;
+    overflow-x: hidden;
   }
-
   a { color: var(--moss-dark); }
+  .mono { font-family: var(--mono); }
 
+  /* ── top bar ─────────────────────────────────────────────────────── */
   .topbar {
-    background: var(--moss-dark);
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(44, 66, 53, 0.96);
+    backdrop-filter: blur(8px);
     color: rgba(233, 231, 220, 0.9);
-    padding: 14px env(safe-area-inset-top, 0px);
     padding: 14px 20px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-family: var(--mono);
-    font-size: 13px;
-    letter-spacing: 0.02em;
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--mono); font-size: 13px; letter-spacing: 0.02em;
   }
-  .topbar-brand { display: flex; align-items: center; gap: 10px; color: #f3f1ea; font-weight: 600; }
+  .topbar-brand { display: flex; align-items: center; gap: 10px; color: #f3f1ea; font-weight: 600; text-decoration: none; }
   .topbar-links { display: flex; gap: 20px; }
   .topbar-links a { color: rgba(233, 231, 220, 0.85); text-decoration: none; }
   .topbar-links a:hover { color: #fff; text-decoration: underline; }
 
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
 
-  .hero {
-    padding: 72px 20px 48px;
-    text-align: center;
-  }
-  .hero-mark { margin: 0 auto 20px; width: 64px; height: 64px; }
-  .hero h1 {
-    font-size: clamp(32px, 6vw, 52px);
-    margin: 0 0 14px;
-    letter-spacing: -0.01em;
-  }
-  .hero p.lead {
-    font-size: clamp(16px, 2.4vw, 19px);
-    color: var(--muted);
-    max-width: 620px;
-    margin: 0 auto 32px;
-  }
-  .cta-row {
-    display: flex;
-    gap: 14px;
-    justify-content: center;
-    flex-wrap: wrap;
-    margin-bottom: 44px;
-  }
+  /* ── reveal on scroll ────────────────────────────────────────────── */
+  .reveal { opacity: 0; transform: translateY(28px); transition: opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1); transition-delay: calc(var(--i, 0) * 90ms); }
+  .reveal.in { opacity: 1; transform: none; }
+  .reveal-scale { opacity: 0; transform: translateY(24px) scale(.96); transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform .9s cubic-bezier(.2,.7,.2,1); transition-delay: calc(var(--i, 0) * 90ms); }
+  .reveal-scale.in { opacity: 1; transform: none; }
+
+  /* ── hero ────────────────────────────────────────────────────────── */
+  .hero { padding: 80px 20px 40px; text-align: center; }
+  .hero-mark { width: 84px; height: 84px; margin: 0 auto 22px; display: block; }
+  .hero h1 { font-size: clamp(36px, 6.4vw, 66px); line-height: 1.08; margin: 0 0 18px; letter-spacing: -0.015em; font-weight: 500; }
+  .hero h1 b { color: var(--moss-dark); font-weight: 600; }
+  .hero .word { display: inline-block; opacity: 0; transform: translateY(26px); animation: wordIn .8s cubic-bezier(.2,.7,.2,1) forwards; }
+  @keyframes wordIn { to { opacity: 1; transform: none; } }
+  .hero p.lead { font-size: clamp(16px, 2.3vw, 20px); color: var(--muted); max-width: 680px; margin: 0 auto 30px; }
+  .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
   .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 13px 24px;
-    border-radius: 8px;
-    font-family: var(--mono);
-    font-size: 14px;
-    text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 24px; border-radius: 10px;
+    font-family: var(--mono); font-size: 14px; text-decoration: none;
     border: 1.5px solid var(--moss-dark);
+    transition: transform .2s ease, background .2s ease, box-shadow .2s ease;
   }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px -12px rgba(44,66,53,.6); }
   .btn-primary { background: var(--moss-dark); color: #f3f1ea; }
   .btn-primary:hover { background: var(--moss); }
   .btn-secondary { background: transparent; color: var(--moss-dark); }
   .btn-secondary:hover { background: rgba(44, 66, 53, 0.06); }
+  .chip-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 30px auto 0; }
+  .chip { font-family: var(--mono); font-size: 12px; color: var(--moss); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; }
+  .hero-stage { max-width: 860px; margin: 48px auto 0; }
 
-  .hero-shot {
-    border-radius: 12px;
-    border: 1px solid var(--line);
-    box-shadow: 0 24px 60px -20px rgba(26, 29, 26, 0.35);
-    overflow: hidden;
-    max-width: 820px;
-    margin: 0 auto;
-  }
-  .hero-shot img { display: block; width: 100%; }
+  /* ── animated stages (designed at 900×560, scaled to fit) ────────── */
+  .stage { position: relative; width: 100%; aspect-ratio: 900 / 560; text-align: left; }
+  .stage-inner { position: absolute; left: 0; top: 0; width: 900px; height: 560px; transform-origin: 0 0; }
+  .card { position: absolute; background: #fff; border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 24px 60px -18px rgba(44,66,53,.35), 0 2px 8px rgba(0,0,0,.05); overflow: hidden; }
+  .bar { height: 58px; background: var(--moss-dark); color: #f3f1ea; display: flex; align-items: center; gap: 12px; padding: 0 24px; font: 600 17px var(--mono); letter-spacing: .1em; }
+  .line { font: 21px/1.5 var(--mono); color: var(--ink); white-space: nowrap; }
+  .ts { color: #8a8672; }
+  .me { color: var(--moss-dark); font-weight: 700; }
+  .oth { color: var(--rust); font-weight: 700; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 9px 18px; font: 600 18px var(--mono); }
+  .badge { display: inline-block; font: 700 14px var(--mono); border-radius: 7px; padding: 2px 8px; margin-left: 10px; vertical-align: 2px; }
+  .meter { height: 12px; background: #ece9dd; border-radius: 6px; overflow: hidden; }
+  .meter > div { height: 100%; border-radius: 6px; }
 
-  .chip-row {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-    flex-wrap: wrap;
-    margin: 40px auto 0;
-    max-width: 820px;
-  }
-  .chip {
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--muted);
-    background: var(--paper-2);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 6px 14px;
-  }
+  /* ── story rows ──────────────────────────────────────────────────── */
+  .story { padding: 90px 20px; }
+  .story:nth-of-type(even) { background: var(--paper-2); }
+  .story .wrap { display: grid; grid-template-columns: 1fr 1.25fr; gap: 56px; align-items: center; }
+  .story.flip .wrap { grid-template-columns: 1.25fr 1fr; }
+  .story.flip .text { order: 2; }
+  .eyebrow { font: 600 12px var(--mono); letter-spacing: .14em; color: var(--rust); text-transform: uppercase; margin-bottom: 12px; }
+  .story h2 { font-size: clamp(28px, 4vw, 42px); line-height: 1.1; margin: 0 0 16px; font-weight: 500; }
+  .story h2 b { color: var(--moss-dark); font-weight: 600; }
+  .story p { color: var(--muted); font-size: 17.5px; margin: 0 0 14px; }
+  .ticks { list-style: none; padding: 0; margin: 18px 0 0; }
+  .ticks li { position: relative; padding-left: 26px; margin: 8px 0; font-size: 16px; }
+  .ticks li::before { content: "✓"; position: absolute; left: 0; color: var(--moss); font-weight: 700; }
 
-  section { padding: 64px 20px; }
-  section h2 {
-    font-size: clamp(24px, 4vw, 32px);
-    margin: 0 0 8px;
-    text-align: center;
-  }
-  section p.section-sub {
-    text-align: center;
-    color: var(--muted);
-    max-width: 560px;
-    margin: 0 auto 40px;
-  }
-
-  .features {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 20px;
-    max-width: 1040px;
-    margin: 0 auto;
-  }
-  .feature-card {
-    background: #fff;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 22px;
-  }
-  .feature-card h3 {
-    margin: 0 0 8px;
-    font-size: 16px;
-  }
-  .feature-card p {
-    margin: 0;
-    color: var(--muted);
-    font-size: 14px;
-  }
-
-  .how-it-works { background: var(--paper-2); }
-  .how-it-works .wrap { overflow-x: auto; }
-  .how-it-works svg { display: block; margin: 0 auto; min-width: 640px; }
-
-  .gallery {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-    gap: 20px;
-    max-width: 1040px;
-    margin: 0 auto;
-  }
-  .gallery figure {
-    margin: 0;
-    background: #fff;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    overflow: hidden;
-  }
+  /* ── features / gallery / security / download ─────────────────────── */
+  section.plain { padding: 80px 20px; }
+  section.plain h2 { font-size: clamp(26px, 4vw, 36px); margin: 0 0 8px; text-align: center; font-weight: 500; }
+  .section-sub { text-align: center; color: var(--muted); max-width: 600px; margin: 0 auto 40px; }
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; max-width: 1100px; margin: 0 auto; }
+  .feature-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 22px; transition: transform .25s ease, box-shadow .25s ease; }
+  .feature-card:hover { transform: translateY(-4px); box-shadow: 0 16px 34px -18px rgba(44,66,53,.45); }
+  .feature-card h3 { margin: 0 0 8px; font-size: 17px; }
+  .feature-card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 20px; max-width: 1100px; margin: 0 auto; }
+  .gallery figure { margin: 0; background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; transition: transform .3s ease, box-shadow .3s ease; }
+  .gallery figure:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -20px rgba(44,66,53,.45); }
   .gallery img { display: block; width: 100%; }
-  .gallery figcaption {
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--muted);
-    padding: 10px 14px;
-    border-top: 1px solid var(--line);
-  }
-
-  .security {
-    background: var(--moss-dark);
-    color: #f3f1ea;
-  }
-  .security .wrap { max-width: 720px; text-align: center; }
+  .gallery figcaption { font-family: var(--mono); font-size: 12px; color: var(--muted); padding: 10px 14px; border-top: 1px solid var(--line); }
+  .security { background: var(--moss-dark); color: #f3f1ea; }
+  .security .wrap { max-width: 760px; text-align: center; }
   .security h2 { color: #fff; }
-  .security p { color: rgba(243, 241, 234, 0.85); }
+  .security p { color: rgba(243, 241, 234, 0.85); font-size: 17px; }
   .security a { color: #fff; }
-
-  .download-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-    max-width: 720px;
-    margin: 0 auto;
-  }
-  .download-table th, .download-table td {
-    text-align: left;
-    padding: 12px 14px;
-    border-bottom: 1px solid var(--line);
-  }
+  .download-table { width: 100%; border-collapse: collapse; font-size: 15px; max-width: 760px; margin: 0 auto; }
+  .download-table th, .download-table td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); }
   .download-table th { font-family: var(--mono); font-size: 12px; color: var(--muted); font-weight: 600; }
   .download-table code { font-family: var(--mono); font-size: 12.5px; }
-  .download-note {
-    max-width: 720px;
-    margin: 18px auto 0;
-    font-size: 13px;
-    color: var(--muted);
-  }
-
-  footer {
-    padding: 40px 20px 56px;
-    text-align: center;
-    font-family: var(--mono);
-    font-size: 12.5px;
-    color: var(--muted);
-  }
+  .download-note { max-width: 760px; margin: 18px auto 0; font-size: 13.5px; color: var(--muted); }
+  footer { padding: 40px 20px 56px; text-align: center; font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
   footer .footer-links { margin-bottom: 10px; }
   footer .footer-links a { color: var(--moss-dark); margin: 0 10px; text-decoration: none; }
   footer .footer-links a:hover { text-decoration: underline; }
 
+  @media (max-width: 860px) {
+    .story .wrap, .story.flip .wrap { grid-template-columns: 1fr; gap: 28px; }
+    .story.flip .text { order: 0; }
+    .story { padding: 64px 16px; }
+  }
   @media (max-width: 640px) {
     .topbar-links { gap: 12px; font-size: 12px; }
-    section { padding: 48px 16px; }
+    .topbar-links .hide-sm { display: none; }
+    section.plain { padding: 56px 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .reveal, .reveal-scale, .hero .word { opacity: 1 !important; transform: none !important; transition: none !important; animation: none !important; }
   }
 </style>
 </head>
 <body>
 
   <div class="topbar">
-    <div class="topbar-brand">
-      <svg width="20" height="20" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mova Flow">
+    <a class="topbar-brand" href="#top">
+      <svg width="20" height="20" viewBox="0 0 64 64" aria-hidden="true">
         <rect x="2" y="2" width="60" height="60" rx="14" fill="#e9e7dc" />
         <rect x="12.5" y="23" width="6" height="18" rx="3" fill="#2c4235" />
         <rect x="23.5" y="16" width="6" height="32" rx="3" fill="#2c4235" />
@@ -242,216 +168,314 @@
         <rect x="45.5" y="26" width="6" height="12" rx="3" fill="#2c4235" />
       </svg>
       MOVA FLOW
-    </div>
+    </a>
     <div class="topbar-links">
       <a href="#extension">Extension</a>
+      <a href="#download">Download</a>
+      <a class="hide-sm" href="https://github.com/f3an/Mova-Flow/tree/master/docs">Docs</a>
       <a href="https://github.com/f3an/Mova-Flow">GitHub</a>
-      <a href="https://github.com/f3an/Mova-Flow/tree/master/docs">Docs</a>
-      <a href="https://github.com/f3an/Mova-Flow/releases/latest">Releases</a>
     </div>
   </div>
 
-  <div class="hero">
-    <svg class="hero-mark" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mova Flow">
-      <rect x="2" y="2" width="60" height="60" rx="14" fill="#1c2e23" />
-      <rect x="12.5" y="23" width="6" height="18" rx="3" fill="#e9e7dc" />
-      <rect x="23.5" y="16" width="6" height="32" rx="3" fill="#e9e7dc" />
-      <rect x="34.5" y="20" width="6" height="24" rx="3" fill="#e9e7dc" />
-      <rect x="45.5" y="26" width="6" height="12" rx="3" fill="#e9e7dc" />
+  <!-- ─── hero ─────────────────────────────────────────────────────── -->
+  <div class="hero" id="top">
+    <svg class="hero-mark" viewBox="0 0 64 64" role="img" aria-label="Mova Flow">
+      <rect x="2" y="2" width="60" height="60" rx="14" fill="#2c4235" />
+      <rect class="eq" x="12.5" y="23" width="6" height="18" rx="3" fill="#f3f1ea" />
+      <rect class="eq" x="23.5" y="16" width="6" height="32" rx="3" fill="#f3f1ea" />
+      <rect class="eq" x="34.5" y="20" width="6" height="24" rx="3" fill="#f3f1ea" />
+      <rect class="eq" x="45.5" y="26" width="6" height="12" rx="3" fill="#f3f1ea" />
     </svg>
-    <h1>Local speech-to-text,<br>powered by Whisper.</h1>
-    <p class="lead">An open-source Electron app built on whisper.cpp. No cloud, no Python, no per-minute API bill — transcribe files, or record a call from any app and get a transcript that says who said what. One machine with a GPU transcribes; any other device on your network uses it as a client.</p>
-    <div class="cta-row">
-      <a class="btn btn-primary" href="https://github.com/f3an/Mova-Flow/releases/latest">↓ Download latest release</a>
-      <a class="btn btn-secondary" href="https://github.com/f3an/Mova-Flow">View on GitHub</a>
+    <h1 id="heroTitle">Your calls, transcribed<br><b>on your own machines.</b></h1>
+    <p class="lead reveal" style="--i:5">Mova Flow records Zoom, Teams, Telegram and Google Meet and turns them into transcripts that say who said what — with Whisper running on your hardware. No cloud, no subscription, nothing leaves your network.</p>
+    <div class="cta-row reveal" style="--i:6">
+      <a class="btn btn-primary" href="https://github.com/f3an/Mova-Flow/releases/latest">↓ Download for Windows &amp; macOS</a>
+      <a class="btn btn-secondary" href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Add the Meet extension</a>
     </div>
-    <div class="hero-shot">
-      <img src="screenshots/02-record.png" alt="Mova Flow recording a call, with level meters for both sides and a finished transcript marking each line Me or Others" loading="lazy">
-    </div>
-    <div class="chip-row">
-      <span class="chip">100% local recognition</span>
+    <div class="chip-row reveal" style="--i:7">
+      <span class="chip">100% local · Whisper large-v3</span>
       <span class="chip">who said what</span>
-      <span class="chip">no Python required</span>
-      <span class="chip">host + client over LAN</span>
-      <span class="chip">Apache-2.0, open source</span>
+      <span class="chip">one GPU for your LAN</span>
+      <span class="chip">free · Apache-2.0</span>
+    </div>
+    <div class="hero-stage reveal-scale" style="--i:8">
+      <div class="stage" data-scene="record" aria-label="Animation: Mova Flow recording a call, with level meters and a transcript appearing line by line, each marked Me or Others">
+        <div class="stage-inner">
+          <div class="card" style="left:40px;top:20px;width:820px;height:520px">
+            <div class="bar"><svg width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect x="12.5" y="23" width="6" height="18" rx="3" fill="#f3f1ea"/><rect x="23.5" y="16" width="6" height="32" rx="3" fill="#f3f1ea"/><rect x="34.5" y="20" width="6" height="24" rx="3" fill="#f3f1ea"/><rect x="45.5" y="26" width="6" height="12" rx="3" fill="#f3f1ea"/></svg>MOVA FLOW · RECORD</div>
+            <div style="padding:26px 32px">
+              <div style="display:flex;align-items:center;gap:18px">
+                <div class="pill" style="background:#a8532e;color:#fff">■ Stop &amp; transcribe</div>
+                <div class="mono" style="font-size:17px;color:#6b6858">from Zoom</div>
+                <div class="mono" data-el="timer" style="margin-left:auto;font-size:26px;color:#a8532e">● 18:40</div>
+              </div>
+              <div class="mono" style="margin-top:24px;display:grid;grid-template-columns:70px 1fr;row-gap:14px;align-items:center">
+                <div style="font-size:17px;color:#6b6858">Me</div><div class="meter"><div data-el="mMe" style="width:40%;background:#2c4235"></div></div>
+                <div style="font-size:17px;color:#6b6858">Call</div><div class="meter"><div data-el="mCall" style="width:60%;background:#a8532e"></div></div>
+              </div>
+              <div data-el="tr" style="margin-top:28px;border-top:1px solid #ece9dd;padding-top:20px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <section id="features">
-    <h2>What you get</h2>
-    <p class="section-sub">Everything runs on hardware you already own.</p>
-    <div class="features">
-      <div class="feature-card">
-        <h3>Fully local recognition</h3>
-        <p>Speech-to-text via whisper-cli (whisper.cpp) — audio never leaves your network, no third-party API involved. Silence is skipped, so quiet stretches can't turn into hallucinated text.</p>
-      </div>
-      <div class="feature-card">
-        <h3>Record calls from any app</h3>
-        <p>Zoom, Teams, Telegram, a browser — record your mic and the call from the Record tab, the tray or the Dock. On macOS, pick just the app the call is in.</p>
-      </div>
-      <div class="feature-card">
-        <h3>Who said what</h3>
-        <p>You and the call go on separate channels, each transcribed on its own — every line comes back marked Me or Others, even when you talk over each other.</p>
-      </div>
-      <div class="feature-card">
-        <h3>Server / client roles</h3>
-        <p>One machine with a GPU holds the model and transcribes; every other device on the network connects as a thin client.</p>
-      </div>
-      <div class="feature-card">
-        <h3>Automatic engine setup</h3>
-        <p>On Windows, picks the CUDA or CPU build of whisper.cpp depending on your NVIDIA GPU; on Apple Silicon, a Metal-accelerated build. Downloaded on its own, from mirrors with checksums.</p>
-      </div>
-      <div class="feature-card">
-        <h3>Any Whisper model</h3>
-        <p>From tiny (~75 MB) up to large-v3 (~3 GB), or point it at your own .bin file.</p>
-      </div>
-      <div class="feature-card">
-        <h3>Format flexibility</h3>
-        <p>mp3/wav/ogg/flac go straight through; m4a and mov are converted to WAV right in the browser — no extra tools.</p>
-      </div>
-      <div class="feature-card">
-        <h3>Secured by design</h3>
-        <p>Shared secret + short-lived bearer tokens on every request, and history that's physically loopback-only on the host.</p>
-      </div>
-    </div>
-  </section>
-
-  <section class="how-it-works">
+  <!-- ─── Google Meet ──────────────────────────────────────────────── -->
+  <section class="story flip" id="extension">
     <div class="wrap">
-      <h2>How it works</h2>
-      <p class="section-sub">Three machines away or on the same desk — same three steps.</p>
-      <svg viewBox="0 0 960 260" role="img" aria-label="One machine with a GPU runs Whisper and exposes it over the local network; other devices connect as clients, drop in an audio file, and get a transcript back — nothing ever leaves the network.">
-        <defs>
-          <marker id="hiwArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="#2c4235"/>
-          </marker>
-        </defs>
-        <rect x="20" y="40" width="260" height="180" rx="10" fill="#ffffff" stroke="#2c4235" stroke-width="2"/>
-        <text x="150" y="72" text-anchor="middle" font-family="'Iowan Old Style', Georgia, serif" font-size="15" font-weight="700" fill="#1a1d1a">1. One host</text>
-        <text x="150" y="98" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#3f5c4a">machine with a GPU</text>
-        <text x="150" y="122" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#1a1d1a">runs whisper.cpp</text>
-        <text x="150" y="142" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#1a1d1a">and exposes it on the</text>
-        <text x="150" y="162" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#1a1d1a">local network</text>
-        <text x="150" y="196" text-anchor="middle" font-family="'SF Mono', 'JetBrains Mono', Consolas, monospace" font-size="10" fill="#8a8672">nothing leaves your LAN</text>
-        <line x1="286" y1="130" x2="330" y2="130" stroke="#2c4235" stroke-width="2" marker-end="url(#hiwArrow)"/>
-        <rect x="350" y="40" width="260" height="180" rx="10" fill="#faf6ee" stroke="#a8532e" stroke-width="2"/>
-        <text x="480" y="72" text-anchor="middle" font-family="'Iowan Old Style', Georgia, serif" font-size="15" font-weight="700" fill="#1a1d1a">2. Any client</text>
-        <text x="480" y="98" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#a8532e">connects with a</text>
-        <text x="480" y="122" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#1a1d1a">shared secret, drops</text>
-        <text x="480" y="142" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#1a1d1a">an audio file into the</text>
-        <text x="480" y="162" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#1a1d1a">Upload tab</text>
-        <text x="480" y="196" text-anchor="middle" font-family="'SF Mono', 'JetBrains Mono', Consolas, monospace" font-size="10" fill="#8a8672">mp3 · wav · ogg · flac · m4a · mov</text>
-        <line x1="616" y1="130" x2="660" y2="130" stroke="#2c4235" stroke-width="2" marker-end="url(#hiwArrow)"/>
-        <rect x="680" y="40" width="260" height="180" rx="10" fill="#ffffff" stroke="#2c4235" stroke-width="2"/>
-        <text x="810" y="72" text-anchor="middle" font-family="'Iowan Old Style', Georgia, serif" font-size="15" font-weight="700" fill="#1a1d1a">3. Timestamped text</text>
-        <text x="810" y="98" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#3f5c4a">comes back in seconds</text>
-        <text x="810" y="122" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#1a1d1a">— read it, copy it, or</text>
-        <text x="810" y="142" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#1a1d1a">download it as .txt,</text>
-        <text x="810" y="162" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#1a1d1a">kept in History too</text>
-        <text x="810" y="196" text-anchor="middle" font-family="'SF Mono', 'JetBrains Mono', Consolas, monospace" font-size="10" fill="#8a8672">[00:04] good afternoon...</text>
-      </svg>
+      <div class="text">
+        <div class="eyebrow reveal">Chrome extension</div>
+        <h2 class="reveal" style="--i:1">On <b>Google Meet</b>, too.</h2>
+        <p class="reveal" style="--i:2">The <a href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Meet Recorder</a> extension records the call right in the browser — a Record button sits next to your mic and camera.</p>
+        <ul class="ticks reveal" style="--i:3">
+          <li>No microphone access — your voice comes from what Meet already sends</li>
+          <li>Reads Meet's captions to put <b>real names</b> on every line</li>
+          <li>Sends to your own Mova Flow host — and lands in the app's History</li>
+        </ul>
+      </div>
+      <div class="reveal-scale" style="--i:2">
+        <div class="stage" data-scene="meet" aria-label="Animation: a Google Meet call with captions; the Meet Recorder popup lists each line under the speaker's name">
+          <div class="stage-inner">
+            <div style="position:absolute;left:20px;top:30px;width:560px;height:440px;background:#202124;border-radius:20px;box-shadow:0 24px 60px rgba(0,0,0,.25);overflow:hidden">
+              <div data-el="tiles" style="position:absolute;left:14px;top:14px;right:14px;height:320px;display:grid;grid-template-columns:1fr 1fr;gap:10px"></div>
+              <div style="position:absolute;left:20px;right:20px;top:282px;text-align:center"><span data-el="cc" style="background:rgba(0,0,0,.75);color:#fff;font:19px Helvetica,Arial,sans-serif;padding:7px 12px;border-radius:8px"></span></div>
+              <div style="position:absolute;left:0;right:0;bottom:22px;display:flex;justify-content:center;gap:14px;align-items:center">
+                <div style="width:48px;height:48px;border-radius:50%;background:#3c4043"></div>
+                <div style="width:48px;height:48px;border-radius:50%;background:#3c4043"></div>
+                <div class="pill" data-el="rec" style="background:#a8532e;color:#fff;font-size:17px;padding:10px 18px">● Rec <span data-el="mt">2:47</span></div>
+                <div style="width:62px;height:48px;border-radius:24px;background:#ea4335"></div>
+              </div>
+            </div>
+            <div class="card" data-el="popup" style="left:500px;top:150px;width:380px;height:370px">
+              <div class="bar" style="height:52px;font-size:15px">MEET RECORDER</div>
+              <div data-el="names" style="padding:20px 22px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
-  <section id="extension">
-    <h2>Record Google Meet calls too</h2>
-    <p class="section-sub">A companion Chrome extension — <a href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Mova Flow Meet Recorder</a> — captures both sides of a call and sends it straight to your Mova Flow host.</p>
+  <!-- ─── one host, one history ────────────────────────────────────── -->
+  <section class="story">
+    <div class="wrap">
+      <div class="text">
+        <div class="eyebrow reveal">One place for every call</div>
+        <h2 class="reveal" style="--i:1">One host. <b>One History.</b></h2>
+        <p class="reveal" style="--i:2">The desktop app records Zoom, Teams and Telegram; the extension records Meet. Both send to the same host, and every call ends up in the same History — searchable, replayable, on your own laptop.</p>
+        <ul class="ticks reveal" style="--i:3">
+          <li>Both sides of the call on separate channels — overlaps keep both voices</li>
+          <li>Play back the audio, copy the text, download a .txt</li>
+          <li>Transcribe again any time — after an update, or in another language</li>
+        </ul>
+      </div>
+      <div class="reveal-scale" style="--i:2">
+        <div class="stage" data-scene="flow" aria-label="Animation: the extension and the app send recordings to one host, which fills a single History list">
+          <div class="stage-inner">
+            <svg width="900" height="560" style="position:absolute;left:0;top:0" aria-hidden="true">
+              <path data-el="p1" d="M 250 125 C 250 185, 450 185, 450 235" stroke="#d8d4c6" stroke-width="4" fill="none" stroke-dasharray="10 10"/>
+              <path data-el="p2" d="M 650 125 C 650 185, 450 185, 450 235" stroke="#d8d4c6" stroke-width="4" fill="none" stroke-dasharray="10 10"/>
+              <path data-el="p3" d="M 450 325 L 450 370" stroke="#d8d4c6" stroke-width="4" fill="none" stroke-dasharray="10 10"/>
+              <g data-el="dots"><circle r="9" fill="#a8532e"/><circle r="9" fill="#a8532e"/><circle r="9" fill="#3f5c4a"/><circle r="9" fill="#3f5c4a"/></g>
+            </svg>
+            <div class="card" style="left:110px;top:30px;width:280px;height:95px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:27px">Meet Recorder</div><div class="mono" style="font-size:15px;color:#6b6858">Chrome</div></div>
+            <div class="card" style="left:510px;top:30px;width:280px;height:95px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:27px">Mova Flow app</div><div class="mono" style="font-size:15px;color:#6b6858">Mac · Windows</div></div>
+            <div class="card" style="left:250px;top:235px;width:400px;height:90px;background:#2c4235;color:#f3f1ea;border-color:#2c4235;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:30px">Your host</div><div class="mono" style="font-size:15px;opacity:.8">GPU · Whisper large-v3</div></div>
+            <div class="card" style="left:170px;top:370px;width:560px;height:180px">
+              <div class="mono" style="padding:14px 22px 2px;font-size:14px;color:#6b6858;letter-spacing:.1em">HISTORY</div>
+              <div data-el="hist" style="padding:0 22px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── mixed languages ──────────────────────────────────────────── -->
+  <section class="story flip">
+    <div class="wrap">
+      <div class="text">
+        <div class="eyebrow reveal">Mixed languages</div>
+        <h2 class="reveal" style="--i:1">Switch language? <b>So does it.</b></h2>
+        <p class="reveal" style="--i:2">Whisper reads a file in one language and quietly <em>translates</em> anything else. Mova Flow notices the stretches in another language and transcribes them as they were spoken — so the English part of a Ukrainian interview stays English.</p>
+        <ul class="ticks reveal" style="--i:3">
+          <li>Works for every file, not only calls</li>
+          <li>Tuned on labelled recordings: it never rewrote the main language in testing</li>
+        </ul>
+      </div>
+      <div class="reveal-scale" style="--i:2">
+        <div class="stage" data-scene="mix" aria-label="Animation: a transcript where an English question first appears as a Ukrainian translation, then flips to the original English">
+          <div class="stage-inner">
+            <div class="card" style="left:20px;top:110px;width:860px;height:340px;padding:38px 40px">
+              <div class="line" data-el="l1"><span class="ts">[12:04]</span> <span class="oth">Olena:</span> Окей, наступне питання — англійською.<span class="badge" style="background:#ece9dd;color:#6b6858">UK</span></div>
+              <div style="height:96px;position:relative;margin-top:22px">
+                <div class="line" data-el="l2a" style="position:absolute;left:0;top:26px"><span class="ts">[12:09]</span> <span class="oth">Olena:</span> Як би ти випустив це в продакшн?<span class="badge" style="background:#f6e3da;color:#a8532e">translated</span></div>
+                <div class="line" data-el="l2b" style="position:absolute;left:0;top:26px"><span class="ts">[12:09]</span> <span class="oth">Olena:</span> How would you ship this to production?<span class="badge" style="background:#dfe9e2;color:#2c4235">EN ✓</span></div>
+              </div>
+              <div class="line" data-el="l3" style="margin-top:14px"><span class="ts">[12:15]</span> <span class="me">Me:</span> We build it in CI and deploy on a tag.<span class="badge" style="background:#dfe9e2;color:#2c4235">EN ✓</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── learns your words ────────────────────────────────────────── -->
+  <section class="story">
+    <div class="wrap">
+      <div class="text">
+        <div class="eyebrow reveal">Vocabulary</div>
+        <h2 class="reveal" style="--i:1">It learns <b>your words.</b></h2>
+        <p class="reveal" style="--i:2">Double-click a misheard word in any transcript and type the right one. Every occurrence is fixed, the transcript is saved — and with “Remember” ticked, the next recordings get it right too.</p>
+        <ul class="ticks reveal" style="--i:3">
+          <li>Terms (ESM, Sentry, colleagues' names) guide Whisper as it listens</li>
+          <li>Replacements fix what it still mishears — whole words only</li>
+          <li>Each client keeps its own; the host can add a shared one</li>
+        </ul>
+      </div>
+      <div class="reveal-scale" style="--i:2">
+        <div class="stage" data-scene="learn" aria-label="Animation: the word Async/Evade is double-clicked in a transcript, corrected to async/await, and remembered">
+          <div class="stage-inner">
+            <div class="card" style="left:20px;top:60px;width:860px;height:300px;padding:36px 38px">
+              <div class="line"><span class="ts">[24:24]</span> <span class="me">Me:</span> I use Promises and <span data-el="w1" style="border-radius:5px;padding:0 3px">Async/Evade</span> daily.</div>
+              <div class="line" style="margin-top:18px"><span class="ts">[24:31]</span> <span class="me">Me:</span> <span data-el="w2" style="border-radius:5px;padding:0 3px">Async/Evade</span> needs no explaining.</div>
+              <div class="mono" data-el="note" style="margin-top:26px;font-size:17px;color:#3f5c4a">Replaced 2 · remembered</div>
+            </div>
+            <div class="card" data-el="pop" style="left:330px;top:200px;width:400px;height:250px;padding:20px">
+              <div class="mono" style="font-size:16px;color:#6b6858">«Async/Evade» →</div>
+              <div class="mono" data-el="input" style="margin-top:10px;border:2px solid #c8a24a;border-radius:8px;padding:9px 12px;font-size:19px;height:46px"></div>
+              <div style="margin-top:14px;font-size:17px;display:flex;gap:10px;align-items:center"><span style="width:20px;height:20px;border-radius:5px;background:#2c4235;color:#fff;font-size:14px;display:inline-flex;align-items:center;justify-content:center">✓</span>Remember for next recordings</div>
+              <div style="margin-top:16px;display:flex;gap:10px"><div class="pill" data-el="replace" style="background:#2c4235;color:#fff;font-size:16px">Replace</div><div class="pill" style="border:1.5px solid #2c4235;color:#2c4235;font-size:16px">Cancel</div></div>
+            </div>
+            <svg data-el="cursor" width="28" height="34" viewBox="0 0 28 34" style="position:absolute;left:0;top:0" aria-hidden="true"><path d="M2 2 L2 28 L9 21 L14 32 L19 30 L14 19 L24 19 Z" fill="#1a1d1a" stroke="#fff" stroke-width="2"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── never loses a recording ──────────────────────────────────── -->
+  <section class="story flip">
+    <div class="wrap">
+      <div class="text">
+        <div class="eyebrow reveal">Safe by default</div>
+        <h2 class="reveal" style="--i:1">A recording is <b>never lost.</b></h2>
+        <p class="reveal" style="--i:2">Calls are written to disk every second while you record. If the app closes, the laptop dies or the host is busy, the recording waits in History — one click to transcribe it.</p>
+        <ul class="ticks reveal" style="--i:3">
+          <li>Recovered automatically after a crash or a quit mid-call</li>
+          <li>A busy host is retried, a lost connection waited out</li>
+        </ul>
+      </div>
+      <div class="reveal-scale" style="--i:2">
+        <div class="stage" data-scene="safe" aria-label="Animation: a recording is interrupted, recovered into History as Not transcribed, then transcribed with one click">
+          <div class="stage-inner">
+            <div class="card" style="left:60px;top:90px;width:780px;height:330px">
+              <div class="bar" style="font-size:16px">HISTORY</div>
+              <div style="padding:26px 30px">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div style="font-size:26px">Call 2026-10-05 14-01.wav</div>
+                  <div class="pill" data-el="status" style="font-size:15px;padding:6px 14px"></div>
+                </div>
+                <div class="mono" data-el="meta" style="margin-top:12px;font-size:16px;color:#6b6858"></div>
+                <div style="margin-top:26px;display:flex;gap:12px">
+                  <div class="pill" data-el="tbtn" style="background:#2c4235;color:#fff;font-size:16px">Transcribe</div>
+                  <div class="pill" style="border:1.5px solid #2c4235;color:#2c4235;font-size:16px">Play</div>
+                  <div class="pill" style="border:1.5px solid #2c4235;color:#2c4235;font-size:16px">Show file</div>
+                </div>
+                <div class="meter" data-el="prog" style="margin-top:24px"><div data-el="progFill" style="width:0%;background:#3f5c4a"></div></div>
+              </div>
+            </div>
+            <div class="pill" data-el="crash" style="position:absolute;left:300px;top:30px;background:#1a1d1a;color:#fff;font-size:16px">⚠ app closed mid-call</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── one GPU for the network ──────────────────────────────────── -->
+  <section class="story">
+    <div class="wrap">
+      <div class="text">
+        <div class="eyebrow reveal">Host + clients</div>
+        <h2 class="reveal" style="--i:1">One GPU. <b>Every laptop.</b></h2>
+        <p class="reveal" style="--i:2">One machine with a graphics card holds the model and does the work; every other laptop on your Wi-Fi is a light client that finds it on its own.</p>
+        <ul class="ticks reveal" style="--i:3">
+          <li>Host on Windows (CUDA or CPU) or Apple Silicon (Metal)</li>
+          <li>Shared secret + short-lived tokens; LAN only, never the internet</li>
+          <li>“Scan network” finds the host — no IPs to type</li>
+        </ul>
+      </div>
+      <div class="reveal-scale" style="--i:2">
+        <div class="stage" data-scene="lan" aria-label="Animation: four laptops send recordings to one PC with a GPU and get transcripts back">
+          <div class="stage-inner">
+            <svg width="900" height="560" style="position:absolute;left:0;top:0" aria-hidden="true"><g data-el="lines"></g><g data-el="ldots"></g></svg>
+            <div class="card" style="left:360px;top:190px;width:180px;height:200px;background:#2c4235;border-color:#2c4235;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#f3f1ea">
+              <div class="mono" data-el="gpu" style="font-size:20px;font-weight:700;padding:9px 16px;border-radius:10px;background:#3f5c4a">GPU</div>
+              <div class="mono" style="margin-top:14px;font-size:15px;opacity:.85">your PC</div>
+            </div>
+            <div data-el="laps"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── features ─────────────────────────────────────────────────── -->
+  <section class="plain" id="features">
+    <h2 class="reveal">Everything else</h2>
+    <p class="section-sub reveal" style="--i:1">All of it on hardware you already own.</p>
     <div class="features">
-      <div class="feature-card">
-        <h3>Who said what — no mic access</h3>
-        <p>Captures everyone else from the call's tab, and your own voice from what Meet itself sends — the extension never asks for your microphone. The transcript marks each line with Me or the speaker's name.</p>
-      </div>
-      <div class="feature-card">
-        <h3>Built into Meet's toolbar</h3>
-        <p>Adds a Record button right next to mic/camera in Meet's own call controls, or use the same button from the extension's popup.</p>
-      </div>
-      <div class="feature-card">
-        <h3>Same host, same security</h3>
-        <p>Uploads to your Mova Flow host over the same shared-secret, bearer-token flow the desktop app uses — nothing leaves your LAN.</p>
-      </div>
-      <div class="feature-card">
-        <h3>Never loses a recording</h3>
-        <p>If the host can't be reached, the recording is saved to Downloads as a .wav instead — upload it manually once the host is back.</p>
-      </div>
+      <div class="feature-card reveal" style="--i:0"><h3>Fully local recognition</h3><p>whisper.cpp with a voice-activity model, so silence never turns into hallucinated text. Audio never leaves your network.</p></div>
+      <div class="feature-card reveal" style="--i:1"><h3>Record from any app</h3><p>On macOS, pick just the app the call is in — notifications and music stay out. Start from the tab, the tray or the Dock.</p></div>
+      <div class="feature-card reveal" style="--i:2"><h3>Any Whisper model</h3><p>From tiny (~75 MB) to large-v3 (~3 GB), or your own .bin. The right engine build downloads on its own, checksum-verified.</p></div>
+      <div class="feature-card reveal" style="--i:3"><h3>Any file</h3><p>Drop in mp3, wav, m4a, mov and more — anything that isn't WAV is converted on your machine first.</p></div>
+      <div class="feature-card reveal" style="--i:0"><h3>Private history</h3><p>A client's history stays on the client; the host's history is reachable only from the host itself.</p></div>
+      <div class="feature-card reveal" style="--i:1"><h3>Lives in the tray</h3><p>Closing the window keeps the host serving; record a call straight from the tray or the Dock.</p></div>
+      <div class="feature-card reveal" style="--i:2"><h3>Updates on your terms</h3><p>You're told when a version is out and choose when to install — or let it update itself.</p></div>
+      <div class="feature-card reveal" style="--i:3"><h3>English &amp; Ukrainian UI</h3><p>Switch the interface language in Settings, along with the microphone and update options.</p></div>
     </div>
-    <div class="cta-row" style="margin-top: 32px;">
-      <a class="btn btn-primary" href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">↓ Add to Chrome</a>
-      <a class="btn btn-secondary" href="https://github.com/f3an/mova-flow-meet-recorder">View on GitHub</a>
-    </div>
-    <p class="download-note" style="text-align: center;">See the <a href="privacy.html">privacy policy</a> for what data it handles.</p>
   </section>
 
-  <section id="screenshots">
-    <h2>See it running</h2>
-    <p class="section-sub">The whole interface — uploads, call recording, history, server setup for both roles, and settings.</p>
+  <!-- ─── screenshots ──────────────────────────────────────────────── -->
+  <section class="plain" id="screenshots" style="background:var(--paper-2)">
+    <h2 class="reveal">See it running</h2>
+    <p class="section-sub reveal" style="--i:1">The real interface — uploads, call recording, history, server setup and settings.</p>
     <div class="gallery">
-      <figure>
-        <img src="screenshots/01-upload.png" alt="Upload tab with a processing job and a finished transcript" loading="lazy">
-        <figcaption>Upload — drop a file, watch it transcribe live</figcaption>
-      </figure>
-      <figure>
-        <img src="screenshots/02-record.png" alt="Record tab during a call, with level meters and a transcript marked Me / Others" loading="lazy">
-        <figcaption>Record — both sides of a call, labelled Me / Others</figcaption>
-      </figure>
-      <figure>
-        <img src="screenshots/03-source-picker.png" alt="Picker with window thumbnails for choosing which app to record" loading="lazy">
-        <figcaption>On macOS, pick the app the call is in</figcaption>
-      </figure>
-      <figure>
-        <img src="screenshots/04-history.png" alt="History tab listing past transcriptions with playback and download" loading="lazy">
-        <figcaption>History — every past transcript, with audio playback</figcaption>
-      </figure>
-      <figure>
-        <img src="screenshots/05-server-host.png" alt="Server tab in host role, showing model selection and network exposure" loading="lazy">
-        <figcaption>Server — host role: model, LAN exposure, secret key</figcaption>
-      </figure>
-      <figure>
-        <img src="screenshots/06-server-client.png" alt="Server tab in client role, connected to a host over the network" loading="lazy">
-        <figcaption>Server — client role: point it at a host and go</figcaption>
-      </figure>
-      <figure>
-        <img src="screenshots/07-settings.png" alt="Settings tab with microphone, interface language and updates" loading="lazy">
-        <figcaption>Settings — microphone, language, updates</figcaption>
-      </figure>
+      <figure class="reveal-scale" style="--i:0"><img src="screenshots/02-record.png" alt="Record tab during a call, with level meters and a transcript marked Me / Others" loading="lazy"><figcaption>Record — both sides of a call, labelled Me / Others</figcaption></figure>
+      <figure class="reveal-scale" style="--i:1"><img src="screenshots/03-source-picker.png" alt="Picker with window thumbnails for choosing which app to record" loading="lazy"><figcaption>On macOS, pick the app the call is in</figcaption></figure>
+      <figure class="reveal-scale" style="--i:0"><img src="screenshots/01-upload.png" alt="Upload tab with a processing job and a finished transcript" loading="lazy"><figcaption>Upload — drop a file, watch it transcribe live</figcaption></figure>
+      <figure class="reveal-scale" style="--i:1"><img src="screenshots/04-history.png" alt="History tab listing past transcriptions with playback and download" loading="lazy"><figcaption>History — every transcript, with audio playback</figcaption></figure>
+      <figure class="reveal-scale" style="--i:0"><img src="screenshots/05-server-host.png" alt="Server tab in host role, showing model selection and network exposure" loading="lazy"><figcaption>Server — host role: model, LAN exposure, secret key</figcaption></figure>
+      <figure class="reveal-scale" style="--i:1"><img src="screenshots/07-settings.png" alt="Settings tab with microphone, interface language and updates" loading="lazy"><figcaption>Settings — microphone, language, updates</figcaption></figure>
     </div>
   </section>
 
-  <section class="security">
+  <!-- ─── security ─────────────────────────────────────────────────── -->
+  <section class="plain security">
     <div class="wrap">
-      <h2>Built to stay on your network</h2>
-      <p>A shared secret exchanges for a short-lived bearer token on every request. History is gated to <code>127.0.0.1</code> at the code level — a client's own history can never physically reach the host, token or not.</p>
-      <p><a href="https://github.com/f3an/Mova-Flow/blob/master/docs/ARCHITECTURE.md#security-model">Read the full security model →</a></p>
+      <h2 class="reveal">Built to stay on your network</h2>
+      <p class="reveal" style="--i:1">A shared secret exchanges for a short-lived bearer token on every request, and the server only answers on your local network. History is gated to <code>127.0.0.1</code> at the code level — a client's history can never reach the host, token or not.</p>
+      <p class="reveal" style="--i:2"><a href="https://github.com/f3an/Mova-Flow/blob/master/docs/ARCHITECTURE.md#security-model">Read the full security model →</a></p>
     </div>
   </section>
 
-  <section id="download">
-    <h2>Download</h2>
-    <p class="section-sub">Grab the latest build from the <a href="https://github.com/f3an/Mova-Flow/releases/latest">Releases page</a>.</p>
-    <table class="download-table">
-      <thead>
-        <tr><th>Platform</th><th>Asset</th><th>What you get</th></tr>
-      </thead>
+  <!-- ─── download ─────────────────────────────────────────────────── -->
+  <section class="plain" id="download">
+    <h2 class="reveal">Download</h2>
+    <p class="section-sub reveal" style="--i:1">Free and open source. Grab the latest build from the <a href="https://github.com/f3an/Mova-Flow/releases/latest">Releases page</a>.</p>
+    <table class="download-table reveal" style="--i:2">
+      <thead><tr><th>Platform</th><th>Asset</th><th>What you get</th></tr></thead>
       <tbody>
-        <tr>
-          <td>Windows</td>
-          <td><code>Mova-Flow-Setup-&lt;version&gt;.exe</code></td>
-          <td>Full app — server (host) and client roles</td>
-        </tr>
-        <tr>
-          <td>macOS</td>
-          <td><code>Mova-Flow-&lt;version&gt;.dmg</code></td>
-          <td>Client role only — no local recognition</td>
-        </tr>
-        <tr>
-          <td>Any OS</td>
-          <td>Source code (.zip / .tar.gz)</td>
-          <td>Build it yourself — see the README</td>
-        </tr>
+        <tr><td>Windows</td><td><code>Mova-Flow-Setup-&lt;version&gt;.exe</code></td><td>Full app — host (CUDA or CPU) and client</td></tr>
+        <tr><td>macOS</td><td><code>Mova-Flow-&lt;version&gt;.dmg</code></td><td>Full app on Apple Silicon (host with Metal + client); Intel Macs: client</td></tr>
+        <tr><td>Chrome / Brave</td><td><a href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Meet Recorder</a></td><td>Records Google Meet into your host</td></tr>
       </tbody>
     </table>
-    <p class="download-note">Installers aren't code-signed: Windows may show a SmartScreen warning ("More info" → "Run anyway"); macOS will say the app "is damaged" — open the <code>.dmg</code> and double-click <strong>Install &amp; Open.command</strong> instead, it installs and clears the flag in one step.</p>
-    <div class="cta-row" style="margin-top: 32px;">
+    <p class="download-note reveal" style="--i:3">Installers aren't code-signed: Windows may show a SmartScreen warning ("More info" → "Run anyway"); macOS will say the app "is damaged" — open the <code>.dmg</code> and double-click <strong>Install &amp; Open.command</strong> instead, it installs and clears the flag in one step.</p>
+    <div class="cta-row reveal" style="--i:4;margin-top:32px">
       <a class="btn btn-primary" href="https://github.com/f3an/Mova-Flow/releases/latest">↓ Download latest release</a>
+      <a class="btn btn-secondary" href="https://github.com/f3an/Mova-Flow">View on GitHub</a>
     </div>
   </section>
 
@@ -468,5 +492,194 @@
     Mova Flow is free and open source. Not affiliated with OpenAI or ggml-org/whisper.cpp.
   </footer>
 
+<script>
+(() => {
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+  const prog = (t, a, b) => clamp((t - a) / (b - a));
+  const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+  const easeInOut = (x) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+  const back = (x) => { const c = 1.5; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+  const lerp = (a, b, x) => a + (b - a) * x;
+  const wave = (t, s) => (Math.sin(t * 7.1 + s) * .5 + Math.sin(t * 13.3 + s * 2.1) * .3 + Math.sin(t * 3.7 + s * 3.3) * .2) * .5 + .5;
+
+  // ── hero title: word by word ──
+  const title = document.getElementById('heroTitle');
+  let wi = 0;
+  title.innerHTML = title.innerHTML.replace(/(<b>|<\/b>|<br>)|([^\s<]+)/g, (m, tag, word) =>
+    tag ? tag : `<span class="word" style="animation-delay:${120 + wi++ * 90}ms">${word}</span>`);
+
+  // ── reveal on scroll ──
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+  document.querySelectorAll('.reveal, .reveal-scale').forEach((el) => io.observe(el));
+
+  // ── stages scale to their box ──
+  const fit = (stage) => { stage.querySelector('.stage-inner').style.transform = `scale(${stage.clientWidth / 900})`; };
+  const ro = new ResizeObserver((es) => es.forEach((e) => fit(e.target)));
+  document.querySelectorAll('.stage').forEach((s) => { fit(s); ro.observe(s); });
+
+  // ── logo equalizer ──
+  const eqBase = [[23, 18], [16, 32], [20, 24], [26, 12]];
+  const eq = (rects, t, amp = 1) => rects.forEach((r, i) => {
+    const h = eqBase[i % 4][1] * (1 + amp * (wave(t * 1.4, i * 1.7) - .5) * .9);
+    r.setAttribute('height', h.toFixed(2)); r.setAttribute('y', (32 - h / 2).toFixed(2));
+  });
+  const heroBars = [...document.querySelectorAll('.hero-mark .eq')];
+
+  // ── scenes: each a function of local time, looped ──
+  const scenes = {
+    record(root) {
+      const $ = (k) => root.querySelector(`[data-el="${k}"]`);
+      const TR = [['00:02', 'Me', 'Thanks for joining — the release plan.'], ['00:07', 'Others', 'The Windows installer is signed.'], ['00:12', 'Others', "I'll test the auto-update tonight."], ['00:18', 'Me', 'Great — we ship on Friday.']];
+      $('tr').innerHTML = TR.map(([ts, who, text]) => `<div class="line" style="margin-bottom:8px"><span class="ts">[${ts}]</span> <span class="${who === 'Me' ? 'me' : 'oth'}">${who}:</span> <span class="tt" data-full="${text.replace(/"/g, '&quot;')}"></span></div>`).join('');
+      const lines = [...root.querySelectorAll('[data-el="tr"] .line')];
+      return { loop: 9, draw(t, T) {
+        const secs = 18 * 60 + 40 + Math.floor(T);
+        $('timer').textContent = `${Math.floor(T * 2) % 2 ? '○' : '●'} ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+        const me = T % 4 < 2 ? 1 : .25;
+        $('mMe').style.width = `${(8 + 72 * wave(T * 1.6, 1) * me).toFixed(2)}%`;
+        $('mCall').style.width = `${(8 + 76 * wave(T * 1.6, 5) * (1.25 - me)).toFixed(2)}%`;
+        lines.forEach((l, i) => {
+          const s = .6 + i * 1.3, out = prog(t, 8.2, 8.8);
+          const p = easeOut(prog(t, s, s + .3));
+          l.style.opacity = p * (1 - out); l.style.transform = `translateX(${lerp(-18, 0, p)}px)`;
+          const tt = l.querySelector('.tt'); tt.textContent = tt.dataset.full.slice(0, Math.round(tt.dataset.full.length * prog(t, s, s + .9)));
+        });
+      } };
+    },
+    meet(root) {
+      const $ = (k) => root.querySelector(`[data-el="${k}"]`);
+      const TILES = [['OK', '#3d6b8f', 'Olena'], ['AM', '#7b5ea7', 'Andrii'], ['DS', '#4f7a5a', 'Dmytro'], ['Me', '#9a6a3c', 'You']];
+      $('tiles').innerHTML = TILES.map(([ini, col, name]) => `<div style="background:#2d2e31;border-radius:12px;position:relative;display:flex;align-items:center;justify-content:center"><div class="ring" style="position:absolute;width:94px;height:94px;border-radius:50%;border:4px solid #8ab4f8;opacity:0"></div><div style="width:80px;height:80px;border-radius:50%;background:${col};color:#fff;display:flex;align-items:center;justify-content:center;font:600 26px Helvetica,Arial">${ini}</div><div style="position:absolute;left:10px;bottom:8px;color:#e8eaed;font:14px Helvetica,Arial">${name}</div></div>`).join('');
+      const CC = [[0.4, 'Olena: The installer is signed and ready.', 0], [2.2, "Andrii: I'll test the update tonight.", 1], [4.0, 'You: Great — then we ship on Friday.', 3]];
+      const NAMES = [['Olena', 'The installer is signed and ready.'], ['Andrii', "I'll test the update tonight."], ['Me', 'Great — then we ship on Friday.']];
+      $('names').innerHTML = NAMES.map(([n, txt]) => `<div class="nm" style="margin-bottom:16px;font:19px/1.4 var(--mono)"><span style="background:${n === 'Me' ? '#dfe9e2' : '#f6e3da'};color:${n === 'Me' ? '#2c4235' : '#a8532e'};font-weight:700;padding:2px 8px;border-radius:6px">${n}</span><div style="margin-top:5px">${txt}</div></div>`).join('');
+      const rings = [...root.querySelectorAll('.ring')], names = [...root.querySelectorAll('.nm')];
+      return { loop: 8, draw(t, T) {
+        const cc = CC.filter(([at]) => t >= at).pop();
+        $('cc').textContent = cc ? cc[1] : ''; $('cc').style.opacity = cc ? clamp((t - cc[0]) / .25) * (1 - prog(t, 7.4, 7.8)) : 0;
+        rings.forEach((r, i) => { r.style.opacity = cc && cc[2] === i ? .55 + .3 * Math.sin(T * 9) : 0; });
+        const s = 47 + Math.floor(T); $('mt').textContent = `${2 + Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+        $('rec').style.transform = `scale(${1 + .05 * Math.sin(T * 6)})`;
+        names.forEach((n, i) => { const p = easeOut(prog(t, .9 + i * 1.8, 1.3 + i * 1.8)) * (1 - prog(t, 7.4, 7.8)); n.style.opacity = p; n.style.transform = `translateY(${lerp(14, 0, p)}px)`; });
+      } };
+    },
+    flow(root) {
+      const $ = (k) => root.querySelector(`[data-el="${k}"]`);
+      const HIST = [['Weekly sync — Meet', 'Olena, Andrii, Me'], ['Call 14:30 — Zoom', 'Me / Others'], ['Interview — Telegram', 'UK + EN']];
+      $('hist').innerHTML = HIST.map(([a, b]) => `<div class="hr" style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid #ece9dd"><span style="font-size:22px">${a}</span><span class="mono" style="font-size:14px;color:#6b6858">${b}</span></div>`).join('');
+      const paths = [$('p1'), $('p2'), $('p3'), $('p3')], dots = [...$('dots').querySelectorAll('circle')], rows = [...root.querySelectorAll('.hr')];
+      return { loop: 7, draw(t, T) {
+        [$('p1'), $('p2'), $('p3')].forEach((p) => { p.style.strokeDashoffset = (-T * 40).toFixed(2); });
+        dots.forEach((d, i) => {
+          const x = ((T + [0, .8, .3, 1.1][i]) % 1.6) / 1.6, L = paths[i].getTotalLength(), pt = paths[i].getPointAtLength(L * easeInOut(x));
+          d.setAttribute('cx', pt.x.toFixed(2)); d.setAttribute('cy', pt.y.toFixed(2)); d.style.opacity = Math.sin(Math.PI * x);
+        });
+        rows.forEach((r, i) => { const p = easeOut(prog(t, .6 + i * .8, 1.1 + i * .8)) * (1 - prog(t, 6.4, 6.9)); r.style.opacity = p; r.style.transform = `translateX(${lerp(36, 0, p)}px)`; });
+      } };
+    },
+    mix(root) {
+      const $ = (k) => root.querySelector(`[data-el="${k}"]`);
+      return { loop: 7, draw(t) {
+        const out = 1 - prog(t, 6.4, 6.9);
+        const l1 = easeOut(prog(t, .3, .7)); $('l1').style.opacity = l1 * out; $('l1').style.transform = `translateX(${lerp(-18, 0, l1)}px)`;
+        const l2 = easeOut(prog(t, 1.0, 1.4)), flip = easeInOut(prog(t, 2.4, 3.0));
+        $('l2a').style.opacity = l2 * (1 - flip) * out; $('l2a').style.transform = `translateX(${lerp(-18, 0, l2)}px) translateY(${lerp(0, -22, flip)}px)`; $('l2a').style.filter = `blur(${(flip * 4).toFixed(2)}px)`;
+        $('l2b').style.opacity = flip * out; $('l2b').style.transform = `translateY(${lerp(22, 0, flip)}px)`;
+        const l3 = easeOut(prog(t, 3.6, 4.0)); $('l3').style.opacity = l3 * out; $('l3').style.transform = `translateX(${lerp(-18, 0, l3)}px)`;
+      } };
+    },
+    learn(root) {
+      const $ = (k) => root.querySelector(`[data-el="${k}"]`);
+      const cur = $('cursor');
+      return { loop: 8, draw(t) {
+        const out = prog(t, 7.4, 7.9);
+        // cursor glides to the first word and double-clicks it
+        const mv = easeInOut(prog(t, .3, 1.3));
+        const x = lerp(760, 300, mv), y = lerp(330, 94, mv);
+        cur.style.transform = `translate(${x}px, ${y}px) scale(${t > 1.4 && t < 1.7 ? .85 : 1})`;
+        cur.style.opacity = 1 - prog(t, 2.2, 2.5);
+        const sel = t > 1.5 && t < 4.6;
+        $('w1').style.background = sel ? 'rgba(200,162,74,.35)' : 'transparent';
+        const popA = easeOut(prog(t, 1.8, 2.2)) * (1 - prog(t, 4.3, 4.6));
+        $('pop').style.opacity = popA; $('pop').style.transform = `translateY(${lerp(14, 0, popA)}px)`;
+        const typed = 'async/await';
+        $('input').textContent = t < 2.4 ? 'Async/Evade' : typed.slice(0, Math.round(typed.length * prog(t, 2.6, 3.6)));
+        $('replace').style.transform = `scale(${t > 3.9 && t < 4.15 ? .92 : 1})`;
+        const done = t >= 4.4 && out < 1;
+        [$('w1'), $('w2')].forEach((w) => {
+          w.textContent = done ? 'async/await' : 'Async/Evade';
+          w.style.color = done ? '#2c4235' : '';
+          w.style.fontWeight = done ? '700' : '';
+          if (done) w.style.background = `rgba(63,92,74,${(.22 * (1 - prog(t, 4.6, 6))).toFixed(3)})`;
+        });
+        $('note').style.opacity = easeOut(prog(t, 4.6, 5.0)) * (1 - out);
+      } };
+    },
+    safe(root) {
+      const $ = (k) => root.querySelector(`[data-el="${k}"]`);
+      const setStatus = (text, bg, fg) => { const s = $('status'); s.textContent = text; s.style.background = bg; s.style.color = fg; };
+      return { loop: 9, draw(t, T) {
+        if (t < 1.6) { setStatus(`${Math.floor(T * 2) % 2 ? '○' : '●'} Recording`, '#f6e3da', '#a8532e'); $('meta').textContent = `today, 14:01 · 0:${String(12 + Math.floor(t * 4)).padStart(2, '0')}`; }
+        else if (t < 5.0) { setStatus('Not transcribed', '#ece9dd', '#6b6858'); $('meta').textContent = 'today, 14:01 · 41:18 · recovered after the app closed mid-recording'; }
+        else if (t < 7.2) { setStatus('Transcribing…', '#e7efe9', '#3f5c4a'); $('meta').textContent = 'today, 14:01 · 41:18'; }
+        else { setStatus('Done ✓', '#dfe9e2', '#2c4235'); $('meta').textContent = 'today, 14:01 · 41:18 · in History'; }
+        const crash = easeOut(prog(t, 1.5, 1.8)) * (1 - prog(t, 3.0, 3.4));
+        $('crash').style.opacity = crash; $('crash').style.transform = `translateY(${lerp(-12, 0, crash)}px)`;
+        $('tbtn').style.transform = `scale(${t > 4.6 && t < 4.9 ? .92 : 1})`;
+        $('tbtn').style.opacity = t > 5 ? .45 : 1;
+        $('progFill').style.width = `${(100 * easeInOut(prog(t, 5.0, 7.2))).toFixed(1)}%`;
+        $('prog').style.opacity = t > 4.9 ? 1 : 0;
+      } };
+    },
+    lan(root) {
+      const $ = (k) => root.querySelector(`[data-el="${k}"]`);
+      const LAPS = [[140, 110], [760, 110], [140, 450], [760, 450]], PC = [450, 290];
+      $('laps').innerHTML = LAPS.map(([x, y]) => `<div class="lap" style="position:absolute;left:${x - 80}px;top:${y - 58}px;width:160px;height:116px"><div style="width:160px;height:98px;background:#fff;border:3px solid #3f5c4a;border-radius:12px;display:flex;align-items:center;justify-content:center"><svg width="40" height="40" viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#2c4235"/><rect class="eql" x="12.5" y="23" width="6" height="18" rx="3" fill="#f3f1ea"/><rect class="eql" x="23.5" y="16" width="6" height="32" rx="3" fill="#f3f1ea"/><rect class="eql" x="34.5" y="20" width="6" height="24" rx="3" fill="#f3f1ea"/><rect class="eql" x="45.5" y="26" width="6" height="12" rx="3" fill="#f3f1ea"/></svg></div><div style="width:188px;height:13px;margin-left:-14px;background:#3f5c4a;border-radius:0 0 10px 10px"></div></div>`).join('');
+      $('lines').innerHTML = LAPS.map(([x, y]) => `<line x1="${x}" y1="${y}" x2="${PC[0]}" y2="${PC[1]}" stroke="#d8d4c6" stroke-width="4" stroke-dasharray="10 10"/>`).join('');
+      $('ldots').innerHTML = LAPS.map(() => '<circle r="10" fill="#a8532e"/><circle r="8" fill="#3f5c4a"/>').join('');
+      const lines = [...$('lines').querySelectorAll('line')], cs = [...$('ldots').querySelectorAll('circle')], bars = [...root.querySelectorAll('.eql')];
+      return { loop: 8, draw(t, T) {
+        $('gpu').style.boxShadow = `0 0 ${(14 + 12 * Math.sin(T * 5)).toFixed(1)}px rgba(168,83,46,${(.35 + .25 * Math.sin(T * 5)).toFixed(2)})`;
+        eq(bars, T, .9);
+        lines.forEach((ln) => { ln.style.strokeDashoffset = (-T * 40).toFixed(2); });
+        LAPS.forEach(([x, y], i) => {
+          const ph = (((T + i * .5) % 2) + 2) % 2 / 2, toPc = ph < .5, q = easeInOut(toPc ? ph * 2 : (ph - .5) * 2);
+          const a = toPc ? [x, y] : PC, b = toPc ? PC : [x, y], cx = lerp(a[0], b[0], q), cy = lerp(a[1], b[1], q);
+          [cs[i * 2], cs[i * 2 + 1]].forEach((c, k) => { c.setAttribute('cx', cx.toFixed(2)); c.setAttribute('cy', cy.toFixed(2)); c.style.opacity = (k === 0) === toPc ? Math.sin(Math.PI * q) : 0; });
+        });
+      } };
+    },
+  };
+
+  // Only scenes on screen run; reduced motion draws one finished frame.
+  const running = new Map();
+  const visible = new Map(); // root → when it came into view (ms)
+  document.querySelectorAll('[data-scene]').forEach((root) => {
+    const s = scenes[root.dataset.scene](root);
+    running.set(root, s);
+    if (reduced) s.draw(s.loop * .7, s.loop * .7);
+  });
+  if (!reduced) {
+    // A scene starts from the beginning each time it scrolls into view.
+    const vio = new IntersectionObserver((es) => es.forEach((e) => {
+      if (e.isIntersecting) { if (!visible.has(e.target)) visible.set(e.target, performance.now()); } else visible.delete(e.target);
+    }), { threshold: 0.05 });
+    running.forEach((_, root) => vio.observe(root));
+    const t0 = performance.now();
+    const frame = (now) => {
+      const T = (now - t0) / 1000;
+      eq(heroBars, T, 1);
+      visible.forEach((since, root) => { const s = running.get(root); s.draw(((now - since) / 1000) % s.loop, T); });
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  } else {
+    eq(heroBars, 0, 0);
+  }
+})();
+</script>
 </body>
 </html>
