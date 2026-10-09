@@ -8,7 +8,7 @@ A local audio transcription app built on [whisper.cpp](https://github.com/ggml-o
 
 **[f3an.github.io/Mova-Flow →](https://f3an.github.io/Mova-Flow/)**
 
-![Recording a call — every line marked Me or Others](docs/screenshots/02-record.png)
+<p align="center"><img src="docs/media/demo.gif" width="640" alt="Mova Flow in 40 seconds: recording a call with Me / Others labels, Google Meet with real names, one host and one History, mixed languages, one GPU for every laptop"></p>
 
 ## Contents
 
