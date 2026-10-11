@@ -61,6 +61,37 @@ function saveHistory(userDataDir: string, entries: HistoryEntry[]): void {
   fs.writeFileSync(historyPath(userDataDir), JSON.stringify(entries, null, 2), 'utf-8');
 }
 
+const idParamSafe = (id: string): boolean => /^[a-f0-9]{1,32}$/.test(id);
+
+const hostTranscriptsDir = (userDataDir: string) => path.join(userDataDir, 'transcripts');
+const hostAudioDir = (userDataDir: string) => path.join(userDataDir, 'audio');
+
+// The host's History, read directly from disk for the browser extension
+// (localBridge.ts) — the same list GET /api/history serves the app itself.
+export function getHostHistory(userDataDir: string): HistoryEntry[] {
+  return loadHistory(userDataDir);
+}
+
+export function getHostHistoryText(userDataDir: string, id: string): string | null {
+  if (!idParamSafe(id)) return null;
+  try {
+    return fs.readFileSync(path.join(hostTranscriptsDir(userDataDir), `${id}.txt`), 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+export function deleteHostHistoryEntry(userDataDir: string, id: string): boolean {
+  if (!idParamSafe(id)) return false;
+  const history = loadHistory(userDataDir);
+  const entry = history.find((e) => e.id === id);
+  if (!entry) return false;
+  saveHistory(userDataDir, history.filter((e) => e.id !== id));
+  fs.unlink(path.join(hostAudioDir(userDataDir), `${id}${entry.audioExt}`), () => {});
+  fs.unlink(path.join(hostTranscriptsDir(userDataDir), `${id}.txt`), () => {});
+  return true;
+}
+
 // Requests from the host's own Upload tab always arrive over loopback (see the
 // `base` URL comment below); anything else came from another computer on the
 // LAN and must leave no trace on this machine once transcription is done.
@@ -178,8 +209,8 @@ export class ServerController {
     if (this.httpServer) return Promise.resolve();
 
     const uploadDir = path.join(userDataDir, 'uploads');
-    const outputDir = path.join(userDataDir, 'transcripts');
-    const audioDir = path.join(userDataDir, 'audio');
+    const outputDir = hostTranscriptsDir(userDataDir);
+    const audioDir = hostAudioDir(userDataDir);
     fs.mkdirSync(uploadDir, { recursive: true });
     fs.mkdirSync(outputDir, { recursive: true });
     fs.mkdirSync(audioDir, { recursive: true });
@@ -317,7 +348,6 @@ export class ServerController {
 
     // Reads straight off disk rather than the in-memory `jobs` map, so history
     // entries from a previous server run (jobs map reset on restart) still work.
-    const idParamSafe = (id: string): boolean => /^[a-f0-9]{1,32}$/.test(id);
 
     app.get('/api/download/:id', requireAuth, (req: Request<{ id: string }>, res: Response) => {
       const { id } = req.params;
@@ -392,20 +422,10 @@ export class ServerController {
     });
 
     app.delete('/api/history/:id', requireAuth, requireLocal, (req: Request<{ id: string }>, res: Response) => {
-      const { id } = req.params;
-      if (!idParamSafe(id)) {
+      if (!deleteHostHistoryEntry(userDataDir, req.params.id)) {
         res.status(404).json({ error: 'Recording not found' });
         return;
       }
-      const history = loadHistory(userDataDir);
-      const entry = history.find((e) => e.id === id);
-      if (!entry) {
-        res.status(404).json({ error: 'Recording not found' });
-        return;
-      }
-      saveHistory(userDataDir, history.filter((e) => e.id !== id));
-      fs.unlink(path.join(audioDir, `${id}${entry.audioExt}`), () => {});
-      fs.unlink(path.join(outputDir, `${id}.txt`), () => {});
       res.json({ ok: true });
     });
 

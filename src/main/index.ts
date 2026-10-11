@@ -65,6 +65,10 @@ interface Config {
   vocabulary: Vocabulary;
   // Client: let the host add its own vocabulary to this machine's uploads.
   use_host_vocabulary: boolean;
+  // Unpacked builds of the Meet Recorder extension allowed to read History
+  // over the extension bridge (the Web Store one always is) — see
+  // localBridge.ts. Optional, hand-edited, for development only.
+  trusted_extension_ids?: string[];
 }
 
 const DEFAULT_CONFIG: Config = {
@@ -689,7 +693,10 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
   initAutoUpdater();
-  startExtensionBridge(app.getPath('userData'));
+  startExtensionBridge(app.getPath('userData'), {
+    role: () => readConfig().role,
+    trustedExtensionIds: () => readConfig().trusted_extension_ids ?? [],
+  });
   initSystemAudioCapture();
   // Only auto-start on a machine that has already been set up (config.json
   // exists) — a fresh install must not silently kick off a multi-GB model
