@@ -1,5 +1,7 @@
 # Contributing to Mova Flow
 
+By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md). Accessibility barriers are bugs — see [ACCESSIBILITY.md](ACCESSIBILITY.md).
+
 ## Prerequisites
 
 - Node.js 22+
