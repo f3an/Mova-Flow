@@ -95,6 +95,8 @@ interface WhisperApi {
   system_audio_start(recordingId: string, appBundleId?: string): Promise<{ startedAt: number }>;
   set_recording_indicator(recording: boolean): Promise<void>;
   on_tray_toggle_recording(callback: () => void): void;
+  extension_job_update(recordingId: string, update: ExtensionJobUpdate): Promise<void>;
+  on_extension_transcribe(callback: (job: { id: string; name: string; language?: string }) => void): void;
   on_system_audio_level(callback: (level: number) => void): void;
   check_for_updates(): Promise<UpdateState>;
 }
@@ -363,18 +365,47 @@ function buildRecordGate(gate: HTMLDivElement, base: string): void {
 let recordUpload: ((file: File, options?: UploadOptions) => Promise<void>) | null = null;
 
 /** Sends a saved recording (see main/recordings.ts) for transcription and
- * shows its progress on the Record tab. */
-async function transcribeSavedRecording(id: string, name: string): Promise<void> {
-  showTab('record');
-  if (!recordUpload) return; // the tab's banner says why
+ * shows its progress on the Record tab. A stereo recording is a call (me
+ * left, call right) and is labelled by side; a mono one — a file sent from
+ * the extension's Upload tab — is transcribed as one mix. */
+async function transcribeSavedRecording(
+  id: string,
+  name: string,
+  extra: Pick<UploadOptions, 'language' | 'report'> = {},
+): Promise<void> {
+  if (!extra.report) showTab('record');
+  if (!recordUpload) {
+    // the tab's banner says why; the extension gets it in words
+    extra.report?.({
+      stage: 'error',
+      message: t('ext.noHost', "Mova Flow can't transcribe right now — open the app and check the Server tab."),
+    });
+    return;
+  }
   const { data, speakerTimeline } = await window.api.read_recording(id);
-  if (!data) return;
-  void recordUpload(new File([data as BlobPart], name, { type: 'audio/wav' }), {
-    speakers: 'me-others',
+  if (!data) {
+    extra.report?.({ stage: 'error', message: t('ext.noRecording', 'The recording was not found in Mova Flow.') });
+    return;
+  }
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data as unknown as ArrayBuffer);
+  void recordUpload(new File([bytes as BlobPart], name, { type: 'audio/wav' }), {
+    speakers: isStereoPcmWav(bytes.subarray(0, 64)) ? 'me-others' : undefined,
     recordingId: id,
     speakerTimeline: speakerTimeline ?? undefined,
+    ...extra,
   });
 }
+
+// The Meet extension hands its recordings (and Upload-tab files) to this app
+// over the local bridge, and the app transcribes them like its own — through
+// its own host connection and vocabulary, into its own History. Progress goes
+// back to the extension via main (see localBridge.ts → /extension/jobs).
+window.api.on_extension_transcribe(async ({ id, name, language }) => {
+  const report = (update: ExtensionJobUpdate) => void window.api.extension_job_update(id, update);
+  // Just launched: the Record tab may not be built yet.
+  if (!recordUpload) await refreshTranscribeGate();
+  await transcribeSavedRecording(id, name, { language, report });
+});
 
 // ── Record a call ────────────────────────────────────────────────────────
 // System-audio levels on macOS come from the main process (the capture
@@ -682,6 +713,18 @@ interface UploadOptions {
   recordingId?: string;
   /** JSON speaker turns (Meet captions, via the extension) — see speaker_timeline in docs/API.md. */
   speakerTimeline?: string;
+  /** Overrides the tab's language picker (the extension chose one). */
+  language?: string;
+  /** Mirrors the job card's progress for the extension that asked. */
+  report?: (update: ExtensionJobUpdate) => void;
+}
+
+/** What the extension sees of a transcription it asked the app for. */
+interface ExtensionJobUpdate {
+  stage: 'processing' | 'done' | 'error';
+  message?: string;
+  text?: string;
+  language?: string;
 }
 
 // Saved recordings currently being sent or transcribed — History shows them
@@ -728,6 +771,7 @@ function makeUploader(
 
   function renderError(card: HTMLDivElement, message: string, file: File, options: UploadOptions): void {
     if (options.recordingId) recordingsInFlight.delete(options.recordingId);
+    options.report?.({ stage: 'error', message });
     const statusEl = card.querySelector('.job-status') as HTMLDivElement;
     statusEl.textContent = t('job.error', 'Error');
     statusEl.className = 'job-status status-error';
@@ -743,7 +787,8 @@ function makeUploader(
       </div>`;
     if (progressEl) progressEl.outerHTML = html;
     else card.insertAdjacentHTML('beforeend', html);
-    card.querySelector('[data-act="retry"]')?.addEventListener('click', () => void uploadFile(file, options, card));
+    // A retry from here is the app's own: the extension that asked has been told it failed.
+    card.querySelector('[data-act="retry"]')?.addEventListener('click', () => void uploadFile(file, { ...options, report: undefined }, card));
     card.querySelector('[data-act="show"]')?.addEventListener('click', () => {
       if (options.recordingId) void window.api.show_recording(options.recordingId);
     });
@@ -755,8 +800,10 @@ function makeUploader(
     if (options.recordingId) recordingsInFlight.add(options.recordingId);
 
     let uploadable: File;
+    const report = options.report ?? (() => {});
     try {
       if (progressEl) progressEl.textContent = t('job.converting', 'Converting format...');
+      report({ stage: 'processing', message: 'Converting the recording...' });
       uploadable = await prepareFileForUpload(file);
     } catch {
       renderError(jobCard, t('job.err.decode', 'Could not decode audio in this format.'), file, options);
@@ -765,7 +812,7 @@ function makeUploader(
 
     const formData = new FormData();
     formData.append('file', uploadable);
-    formData.append('language', langSelect.value);
+    formData.append('language', options.language || langSelect.value);
     if (options.speakers) formData.append('speakers', options.speakers);
     if (options.speakerTimeline) formData.append('speaker_timeline', options.speakerTimeline);
     try {
@@ -779,9 +826,11 @@ function makeUploader(
     try {
       for (let waited = 0; ; waited += BUSY_RETRY_MS) {
         if (progressEl) progressEl.textContent = t('job.uploading', 'Uploading file...');
+        report({ stage: 'processing', message: 'Sending to the host...' });
         const res = await authorizedFetch(base, '/api/transcribe', { method: 'POST', body: formData });
         if (res.status === 429 && waited < BUSY_GIVE_UP_MS) {
           if (progressEl) progressEl.textContent = t('job.busyRetry', 'The server is busy — trying again shortly...');
+          report({ stage: 'processing', message: 'The host is busy — trying again shortly...' });
           await sleep(BUSY_RETRY_MS);
           continue;
         }
@@ -876,6 +925,7 @@ function makeUploader(
         statusEl.textContent = t('job.processing', 'Processing');
         statusEl.className = 'job-status status-processing';
         if (progressEl) progressEl.textContent = data.progress || '...';
+        options.report?.({ stage: 'processing', message: data.progress || 'Transcribing...' });
       }
 
       if (data.status === 'done') {
@@ -900,6 +950,10 @@ function makeUploader(
           downloadTextAsFile(textEl.textContent || '', `transcript_${jobId}.txt`),
         );
         const saved = finishSaved(jobId, originalFile, data.detectedLanguage || 'auto', data.result || '', options);
+        // Told once it's in History, so the extension's list already has it.
+        void saved.then(() =>
+          options.report?.({ stage: 'done', text: data.result || '', language: data.detectedLanguage || 'auto' }),
+        );
         makeCorrectable(textEl, async (fixed) => (await saved)(fixed));
         return;
       }

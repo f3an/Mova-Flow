@@ -61,6 +61,11 @@ contextBridge.exposeInMainWorld('api', {
   system_audio_start: (recordingId: string, appBundleId?: string) =>
     ipcRenderer.invoke('system-audio-start', recordingId, appBundleId),
   set_recording_indicator: (recording: boolean) => ipcRenderer.invoke('set-recording-indicator', recording),
+  extension_job_update: (recordingId: string, update: unknown) =>
+    ipcRenderer.invoke('extension-job-update', recordingId, update),
+  on_extension_transcribe: (callback: (job: { id: string; name: string; language?: string }) => void) => {
+    ipcRenderer.on('extension-transcribe', (_evt, job) => callback(job));
+  },
   on_tray_toggle_recording: (callback: () => void) => {
     ipcRenderer.on('tray-toggle-recording', () => callback());
   },

@@ -89,6 +89,8 @@ const UK: Record<string, string> = {
   'job.err.lostConnection': "Втрачено зв'язок із сервером",
   'job.err.unknown': 'Невідома помилка',
   'job.retry': 'Спробувати ще раз',
+  'ext.noHost': 'Mova Flow зараз не може розпізнати — відкрийте застосунок і перевірте вкладку «Сервер».',
+  'ext.noRecording': 'Запис не знайдено в Mova Flow.',
   'job.showFile': 'Показати файл',
   'job.savedRecording': 'Запис збережено — він чекатиме в Історії, доки його не розпізнають.',
   'job.busyRetry': 'Сервер зайнятий — зараз спробую ще раз...',

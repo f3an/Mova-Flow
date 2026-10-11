@@ -23,7 +23,7 @@ import {
   getClientHistoryText,
   setClientHistoryText,
 } from './clientHistory';
-import { startExtensionBridge } from './localBridge';
+import { ExtensionJob, startExtensionBridge } from './localBridge';
 import { EMPTY_VOCABULARY, parseVocabulary, Vocabulary } from './vocabulary';
 import {
   activeRecording,
@@ -577,6 +577,32 @@ ipcMain.handle('delete-recording', async (_evt: IpcMainInvokeEvent, id: string) 
   return { ok: deleteRecording(app.getPath('userData'), id) };
 });
 
+// Transcriptions the Meet extension asked for, by recording id — the
+// renderer runs them (it owns the host connection) and reports progress here,
+// where the extension polls it over the bridge.
+const extensionJobs = new Map<string, ExtensionJob>();
+
+function startExtensionTranscription(id: string, name: string, language?: string): void {
+  extensionJobs.set(id, { stage: 'processing', message: 'Waiting for Mova Flow...', updatedAt: Date.now() });
+  const send = () => mainWindow?.webContents.send('extension-transcribe', { id, name, language });
+  if (!mainWindow) {
+    createWindow();
+    mainWindow!.webContents.once('did-finish-load', send);
+  } else if (mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.once('did-finish-load', send);
+  } else {
+    send();
+  }
+  // Finished jobs are kept a while for the extension to read, then dropped.
+  for (const [key, job] of extensionJobs) {
+    if (Date.now() - job.updatedAt > 6 * 60 * 60_000) extensionJobs.delete(key);
+  }
+}
+
+ipcMain.handle('extension-job-update', (_evt: IpcMainInvokeEvent, id: string, update: Omit<ExtensionJob, 'updatedAt'>) => {
+  extensionJobs.set(String(id), { ...update, updatedAt: Date.now() });
+});
+
 /** Stops and assembles the recording in progress, if any — on quit, or when
  * the window that was making it is gone. */
 async function finishActiveRecording(): Promise<void> {
@@ -696,6 +722,17 @@ app.whenReady().then(() => {
   startExtensionBridge(app.getPath('userData'), {
     role: () => readConfig().role,
     trustedExtensionIds: () => readConfig().trusted_extension_ids ?? [],
+    transcribe: startExtensionTranscription,
+    job: (id) => extensionJobs.get(id) ?? null,
+    status: () => {
+      const cfg = readConfig();
+      return {
+        version: app.getVersion(),
+        role: cfg.role,
+        host: cfg.role === 'client' ? `${cfg.server_host}:${cfg.server_port}` : null,
+        serverStage: serverState.stage,
+      };
+    },
   });
   initSystemAudioCapture();
   // Only auto-start on a machine that has already been set up (config.json

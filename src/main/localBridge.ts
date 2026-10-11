@@ -30,6 +30,14 @@ import { deleteHostHistoryEntry, getHostHistory, getHostHistoryText } from './se
 //                              still waiting for a transcript — so the
 //                              extension's side panel shows the same list
 //   GET /extension/history/:id/text, DELETE /extension/history/:id
+//   POST /extension/recording with transcribe=1, or
+//   POST /extension/transcribe/:id
+//                              the app transcribes the recording itself —
+//                              through its own host connection, into its own
+//                              History — and GET /extension/jobs/:id reports
+//                              how it's going; the extension needs no host
+//                              settings of its own
+//   GET /extension/status      the app's version and where it transcribes
 //
 // Reading transcripts is limited to Mova Flow's own extension (see
 // trustedExtensionsOnly); handing recordings in stays open to any extension.
@@ -38,12 +46,32 @@ export const EXTENSION_BRIDGE_PORT = 5057;
 /** Mova Flow Meet Recorder on the Chrome Web Store (Brave installs the same ID). */
 const STORE_EXTENSION_ID = 'kdeeohghjiengnkgfpjkakeajhnddfnh';
 
+export interface ExtensionJob {
+  stage: 'processing' | 'done' | 'error';
+  message?: string;
+  text?: string;
+  language?: string;
+  updatedAt: number;
+}
+
+export interface AppStatus {
+  version: string;
+  role: 'host' | 'client';
+  /** The host a client sends to; null on a host. */
+  host: string | null;
+  serverStage: string;
+}
+
 export interface BridgeOptions {
   /** Which History the app shows: the host's own, or this client's. */
   role(): 'host' | 'client';
   /** Extra extension IDs allowed to read History — an unpacked build has an
    * ID of its own (config.json → trusted_extension_ids). */
   trustedExtensionIds(): string[];
+  /** Hands a saved recording to the app's own transcription (the renderer). */
+  transcribe(id: string, name: string, language?: string): void;
+  job(id: string): ExtensionJob | null;
+  status(): AppStatus;
 }
 
 const PREVIEW_CHARS = 240;
@@ -70,10 +98,13 @@ export function startExtensionBridge(userDataDir: string, options: BridgeOptions
   const app = express();
 
   // Transcripts are private: any extension could POST a recording here, but
-  // only Mova Flow's own may read the History back.
-  const trustedExtensionsOnly = (req: Request, res: Response, next: NextFunction): void => {
+  // only Mova Flow's own may read the History back or use the host.
+  const isTrusted = (req: Request): boolean => {
     const id = extensionId(req);
-    if (!id || (id !== STORE_EXTENSION_ID && !options.trustedExtensionIds().includes(id))) {
+    return !!id && (id === STORE_EXTENSION_ID || options.trustedExtensionIds().includes(id));
+  };
+  const trustedExtensionsOnly = (req: Request, res: Response, next: NextFunction): void => {
+    if (!isTrusted(req)) {
       res.status(403).json({ error: 'Not allowed.' });
       return;
     }
@@ -113,6 +144,30 @@ export function startExtensionBridge(userDataDir: string, options: BridgeOptions
     res.json({ text });
   });
 
+  app.post('/extension/transcribe/:id', trustedExtensionsOnly, express.json(), (req: Request<{ id: string }>, res: Response) => {
+    const pending = listRecordings(userDataDir).find((r) => r.id === req.params.id && r.state === 'ready');
+    if (!pending) {
+      res.status(404).json({ error: 'Recording not found.' });
+      return;
+    }
+    const language = (req.body as { language?: unknown } | undefined)?.language;
+    options.transcribe(pending.id, pending.name, typeof language === 'string' ? language : undefined);
+    res.json({ ok: true });
+  });
+
+  app.get('/extension/jobs/:id', trustedExtensionsOnly, (req: Request<{ id: string }>, res: Response) => {
+    const job = options.job(req.params.id);
+    if (!job) {
+      res.status(404).json({ error: 'No such job.' });
+      return;
+    }
+    res.json(job);
+  });
+
+  app.get('/extension/status', trustedExtensionsOnly, (_req: Request, res: Response) => {
+    res.json(options.status());
+  });
+
   app.delete('/extension/history/:id', trustedExtensionsOnly, (req: Request<{ id: string }>, res: Response) => {
     const ok = isHost()
       ? deleteHostHistoryEntry(userDataDir, req.params.id)
@@ -126,14 +181,21 @@ export function startExtensionBridge(userDataDir: string, options: BridgeOptions
       res.status(400).json({ error: 'No file in the request.' });
       return;
     }
-    const { filename, speaker_timeline } = req.body as { filename?: string; speaker_timeline?: string };
+    const { filename, speaker_timeline, transcribe, language } = req.body as {
+      filename?: string;
+      speaker_timeline?: string;
+      transcribe?: string;
+      language?: string;
+    };
     try {
+      const name = filename || 'Meet.wav';
       const id = addFinishedRecording(
         userDataDir,
-        filename || 'Meet.wav',
+        name,
         fs.readFileSync(req.file.path),
         typeof speaker_timeline === 'string' ? speaker_timeline : undefined,
       );
+      if (transcribe === '1' && isTrusted(req)) options.transcribe(id, name, typeof language === 'string' ? language : undefined);
       res.json({ id });
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
