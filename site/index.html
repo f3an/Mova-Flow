@@ -37,7 +37,7 @@
 
   /* ── top bar ─────────────────────────────────────────────────────── */
   .topbar {
-    position: sticky; top: 0; z-index: 20;
+    position: sticky; top: -1px; z-index: 20;
     background: rgba(44, 66, 53, 0.96);
     backdrop-filter: blur(8px);
     color: rgba(233, 231, 220, 0.9);
@@ -274,15 +274,15 @@
         <div class="stage" data-scene="flow" aria-label="Animation: the extension and the app send recordings to one host, which fills a single History list">
           <div class="stage-inner">
             <svg width="900" height="560" style="position:absolute;left:0;top:0" aria-hidden="true">
-              <path data-el="p1" d="M 250 125 C 250 185, 450 185, 450 235" stroke="#d8d4c6" stroke-width="4" fill="none" stroke-dasharray="10 10"/>
-              <path data-el="p2" d="M 650 125 C 650 185, 450 185, 450 235" stroke="#d8d4c6" stroke-width="4" fill="none" stroke-dasharray="10 10"/>
-              <path data-el="p3" d="M 450 325 L 450 370" stroke="#d8d4c6" stroke-width="4" fill="none" stroke-dasharray="10 10"/>
+              <path data-el="p1" d="M 250 115 C 250 165, 450 165, 450 205" stroke="#d8d4c6" stroke-width="4" fill="none" stroke-dasharray="10 10"/>
+              <path data-el="p2" d="M 650 115 C 650 165, 450 165, 450 205" stroke="#d8d4c6" stroke-width="4" fill="none" stroke-dasharray="10 10"/>
+              <path data-el="p3" d="M 450 295 L 450 330" stroke="#d8d4c6" stroke-width="4" fill="none" stroke-dasharray="10 10"/>
               <g data-el="dots"><circle r="9" fill="#a8532e"/><circle r="9" fill="#a8532e"/><circle r="9" fill="#3f5c4a"/><circle r="9" fill="#3f5c4a"/></g>
             </svg>
-            <div class="card" style="left:110px;top:30px;width:280px;height:95px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:27px">Meet Recorder</div><div class="mono" style="font-size:15px;color:#6b6858">Chrome</div></div>
-            <div class="card" style="left:510px;top:30px;width:280px;height:95px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:27px">Mova Flow app</div><div class="mono" style="font-size:15px;color:#6b6858">Mac · Windows</div></div>
-            <div class="card" style="left:250px;top:235px;width:400px;height:90px;background:#2c4235;color:#f3f1ea;border-color:#2c4235;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:30px">Your host</div><div class="mono" style="font-size:15px;opacity:.8">GPU · Whisper large-v3</div></div>
-            <div class="card" style="left:170px;top:370px;width:560px;height:180px">
+            <div class="card" style="left:110px;top:20px;width:280px;height:95px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:27px">Meet Recorder</div><div class="mono" style="font-size:15px;color:#6b6858">Chrome</div></div>
+            <div class="card" style="left:510px;top:20px;width:280px;height:95px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:27px">Mova Flow app</div><div class="mono" style="font-size:15px;color:#6b6858">Mac · Windows</div></div>
+            <div class="card" style="left:250px;top:205px;width:400px;height:90px;background:#2c4235;color:#f3f1ea;border-color:#2c4235;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:30px">Your host</div><div class="mono" style="font-size:15px;opacity:.8">GPU · Whisper large-v3</div></div>
+            <div class="card" style="left:170px;top:330px;width:560px;height:220px">
               <div class="mono" style="padding:14px 22px 2px;font-size:14px;color:#6b6858;letter-spacing:.1em">HISTORY</div>
               <div data-el="hist" style="padding:0 22px"></div>
             </div>
