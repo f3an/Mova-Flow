@@ -97,6 +97,30 @@ function extensionId(req: Request): string | null {
 export function startExtensionBridge(userDataDir: string, options: BridgeOptions): void {
   const app = express();
 
+  // The extension reaches this over plain CORS — it has no host permission
+  // for 127.0.0.1 any more, since with one Chrome leaves the Origin header off
+  // its GETs, and Origin is what tells Mova Flow's own extension apart below.
+  // Any extension may read the responses (the routes themselves turn away the
+  // ones they shouldn't serve, with a 403 the extension can then read);
+  // web pages get no CORS headers, so their browser never shows them a thing.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const origin = req.get('origin') || '';
+    if (/^(chrome|moz)-extension:\/\//.test(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Vary', 'Origin');
+      if (req.method === 'OPTIONS') {
+        res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE');
+        res.header('Access-Control-Allow-Headers', 'Content-Type');
+        // Chrome's Private Network Access preflight, for builds that still send it.
+        if (req.get('access-control-request-private-network')) res.header('Access-Control-Allow-Private-Network', 'true');
+        res.header('Access-Control-Max-Age', '600');
+        res.sendStatus(204);
+        return;
+      }
+    }
+    next();
+  });
+
   // Transcripts are private: any extension could POST a recording here, but
   // only Mova Flow's own may read the History back or use the host.
   const isTrusted = (req: Request): boolean => {
