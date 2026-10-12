@@ -108,6 +108,61 @@ function cliSupports(exe: string, flag: string): Promise<boolean> {
 
 const cliSupportsVad = (exe: string) => cliSupports(exe, '--vad');
 
+// The vocabulary prompt has to be sized to the token: whisper-cli's -mc is the
+// budget for the whole prompt, the vocabulary included, so -mc 1 cut it down
+// to its last token — and at exactly 1 whisper.cpp also works out -1 tokens of
+// rolling context to take and reads past the end of its buffer (a crash with
+// 0xC0000409 on Windows). -mc = the prompt's tokens + 1 carries all of it and
+// leaves the rolling context at 0, which is what -mc 0 is for (see
+// transcribeText). There's no tokenizer outside whisper-cli, but whisper-cli
+// itself names the count when a prompt doesn't fit: so it's asked once per
+// prompt, with room for a single token, over a second of silence — on the tiny
+// model when there is one (the multilingual models share a tokenizer).
+const promptTokens = new Map<string, Promise<number | null>>();
+
+function countPromptTokens(exe: string, model: string, prompt: string, tmpDir: string): Promise<number | null> {
+  const key = `${model}\n${prompt}`;
+  let count = promptTokens.get(key);
+  if (!count) {
+    count = new Promise((resolve) => {
+      const silence = path.join(tmpDir, `prompt-probe-${process.pid}-${Date.now()}.wav`);
+      const samples = 16000;
+      const wav = Buffer.alloc(44 + samples * 2);
+      wav.write('RIFF', 0, 'ascii');
+      wav.writeUInt32LE(36 + samples * 2, 4);
+      wav.write('WAVEfmt ', 8, 'ascii');
+      wav.writeUInt32LE(16, 16);
+      wav.writeUInt16LE(1, 20);
+      wav.writeUInt16LE(1, 22);
+      wav.writeUInt32LE(16000, 24);
+      wav.writeUInt32LE(32000, 28);
+      wav.writeUInt16LE(2, 32);
+      wav.writeUInt16LE(16, 34);
+      wav.write('data', 36, 'ascii');
+      wav.writeUInt32LE(samples * 2, 40);
+      fs.writeFileSync(silence, wav);
+      execFile(
+        exe,
+        ['-m', model, '-f', silence, '-l', 'en', '-mc', '2', '--prompt', prompt, '--carry-initial-prompt'],
+        { cwd: path.dirname(exe), timeout: 120000, maxBuffer: 16 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+          fs.rmSync(silence, { force: true });
+          const named = `${stdout}${stderr}`.match(/initial prompt is too long \((\d+) tokens\)/);
+          // Not named: it fit in the one token.
+          resolve(named ? Number(named[1]) : err ? null : 1);
+        },
+      );
+    });
+    promptTokens.set(key, count);
+    // A failure is worth asking again next time, not remembering.
+    void count.then((n) => n === null && promptTokens.delete(key));
+  }
+  return count;
+}
+
+/** whisper-cli takes at most n_text_ctx/2 = 224 tokens of prompt. */
+const MAX_PROMPT_CTX = 224;
+
 function binDir(userDataDir: string): string {
   return path.join(engineDir(userDataDir), 'bin');
 }
@@ -609,13 +664,20 @@ async function transcribeText(
   const exe = cliPath(userDataDir);
   const vPath = vadModelPath(userDataDir);
   const vad = fs.existsSync(vPath) && (await cliSupportsVad(exe));
-  // The vocabulary's terms as a prompt carried into every window. That needs
-  // -mc 1 rather than 0 (0 drops the prompt too) — one token of decoded
-  // text, not enough to start a loop.
+  // The vocabulary's terms as a prompt carried into every window, with -mc
+  // sized to exactly that prompt (countPromptTokens) — no decoded text on top,
+  // the same as -mc 0 below, which would drop the prompt too.
   const prompt = vocabularyPrompt(vocabulary);
-  const contextArgs =
+  const tiny = tinyModelPath(userDataDir);
+  const promptSize =
     prompt && (await cliSupports(exe, '--carry-initial-prompt'))
-      ? ['-mc', '1', '--prompt', prompt, '--carry-initial-prompt']
+      ? await countPromptTokens(exe, fs.existsSync(tiny) ? tiny : modelFilePath, prompt, path.dirname(filePath))
+      : null;
+  // Couldn't size it (or an older whisper-cli): no vocabulary rather than a
+  // crash or a prompt cut down to nothing.
+  const contextArgs =
+    prompt && promptSize !== null
+      ? ['-mc', String(Math.min(promptSize + 1, MAX_PROMPT_CTX)), '--prompt', prompt, '--carry-initial-prompt']
       : ['-mc', '0'];
   // whisper-cli defaults to 'en' when -l is omitted — it does NOT auto-detect
   // by default — so auto mode needs an explicit '-l auto' or everything gets
