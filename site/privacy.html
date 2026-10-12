@@ -97,23 +97,24 @@
     <p class="updated">Last updated: October 12, 2026 — applies to the Mova Flow desktop app and the Mova Flow Meet Recorder Chrome extension.</p>
 
     <div class="card">
-      <p><strong>Short version:</strong> Mova Flow does not have a backend, an account system, or any analytics. Audio you record or upload is sent only to the Mova Flow host <em>you</em> configure, over your own local network. Nothing is sent to us or to any third party, because there is no "us" in the data path at all — the code runs entirely on your machines.</p>
+      <p><strong>Short version:</strong> Mova Flow does not have a backend, an account system, or any analytics. Audio you record or upload is sent only to the Mova Flow host <em>you</em> configure, over your own local network; the browser extension hands its recordings to the Mova Flow app on the same computer, which does the rest. Nothing is sent to us or to any third party, because there is no "us" in the data path at all — the code runs entirely on your machines.</p>
     </div>
 
     <h2>What data is processed</h2>
     <ul>
-      <li><strong>Audio</strong> — files you drop into the Upload tab, or a call recorded by the extension (Google Meet, Microsoft Teams, Zoom's web client or Jitsi Meet): the call's tab audio, plus your own side of the call taken from the audio the call page itself sends to the other participants. The extension never requests or opens your microphone.</li>
-      <li><strong>Speaker names</strong> — while recording a Google Meet call, the extension reads the display names in Meet's live captions and when each person spoke, so the transcript can say who said what. These are sent only to your configured host along with the recording.</li>
+      <li><strong>Audio</strong> — files you drop into the Upload tab, or a call recorded by the extension (Google Meet, Microsoft Teams, Zoom's web client or Jitsi Meet): the call's tab audio, plus your own side of the call taken from the audio the call page itself sends to the other participants (on Zoom's web client, which sends no such audio, the microphone track Zoom itself opened, silenced while Zoom shows you muted). The extension never requests or opens your microphone.</li>
+      <li><strong>Speaker names</strong> — while recording a Google Meet call, the extension reads the display names in Meet's live captions and when each person spoke, so the transcript can say who said what. These go only to the Mova Flow app on your computer along with the recording, and from there to your configured host.</li>
       <li><strong>Transcripts</strong> — the text Whisper produces from that audio, stored in the app's local History alongside the source audio.</li>
-      <li><strong>Connection settings</strong> — the host's IP/hostname, port, and access secret you enter to connect a client to a host, stored locally (Electron's <code>config.json</code> or <code>chrome.storage</code> for the extension).</li>
+      <li><strong>Connection settings</strong> — the host's IP/hostname, port, and access secret you enter to connect a client to a host, stored locally in the app's <code>config.json</code>. The extension has no connection settings of its own.</li>
     </ul>
 
     <h2>Where it goes</h2>
     <p>Audio and transcripts travel only between devices you control, over your own local network:</p>
     <ul>
       <li>The <strong>host</strong> (one machine with a GPU) runs Whisper locally via <code>whisper-cli.exe</code> — recognition never calls out to any external API.</li>
-      <li>A <strong>client</strong> (desktop app or the Meet Recorder extension) sends audio to the host you configured, authenticated with a shared secret exchanged for a short-lived bearer token. See <a href="https://github.com/f3an/Mova-Flow/blob/master/docs/ARCHITECTURE.md#security-model">the security model</a> for details.</li>
-      <li>If the extension can't reach your configured host (offline, wrong network, etc.), the recording is saved to your <strong>Downloads</strong> folder instead of being discarded — it still never leaves your machine.</li>
+      <li>A <strong>client</strong> desktop app sends audio to the host you configured, authenticated with a shared secret exchanged for a short-lived bearer token. See <a href="https://github.com/f3an/Mova-Flow/blob/master/docs/ARCHITECTURE.md#security-model">the security model</a> for details.</li>
+      <li>The <strong>Meet Recorder extension</strong> hands each recording to the Mova Flow app on the same computer, over <code>127.0.0.1</code> (it never leaves the machine on that step); the app files it in its History and transcribes it — itself, or through its host as above. Only Mova Flow's own extension may read the app's History back.</li>
+      <li>If the app isn't running, the recording is saved to your <strong>Downloads</strong> folder instead of being discarded — it still never leaves your machine.</li>
     </ul>
     <p>No audio, transcript, or setting is ever sent to Mova Flow's developer, to any analytics service, or to any third party. There are no ads, no trackers, and no telemetry.</p>
 
@@ -122,10 +123,12 @@
     <ul>
       <li><code>tabCapture</code> / <code>offscreen</code> — capture the call tab's audio (everyone else on the call) and combine it with your own side of the call into one recording.</li>
       <li>Access to the supported call services' pages (<code>meet.google.com</code>, <code>teams.microsoft.com</code>, <code>teams.live.com</code>, <code>teams.cloud.microsoft</code>, <code>*.zoom.us</code> (for Zoom's web client, which can sit inside the Zoom Workplace page), <code>meet.jit.si</code>) — add the Record button to the call page, read speaker names from Meet's live captions (Google Meet only), and record the audio the page sends from you to the other participants (silent while you're muted). Nothing on these pages is read or recorded unless you press Record. No microphone permission is requested.</li>
-      <li><code>storage</code> — remember your configured host address and secret, and in-progress recording status, locally in the browser.</li>
-      <li><code>activeTab</code> — identify the current call's tab when you press Record.</li>
-      <li><code>downloads</code> — save the recording as a <code>.wav</code> file when your host can't be reached.</li>
-      <li><code>host_permissions</code> (the address you configure) — send the recording to your own Mova Flow host for transcription.</li>
+      <li><code>storage</code> — keep the in-progress recording's status for the browser session, so the popup, side panel and call page agree on it.</li>
+      <li><code>activeTab</code> — Chrome's permission to capture the call's tab, granted when you call on the extension there (its icon, its keyboard shortcut, or its context-menu item).</li>
+      <li><code>contextMenus</code> — one item, "Record this call with Mova Flow", in the right-click menu on call pages, to start or stop a recording.</li>
+      <li><code>sidePanel</code> — show the extension in the browser's side panel next to the call, if you choose to open it there.</li>
+      <li><code>downloads</code> — save the recording as a <code>.wav</code> file when the Mova Flow app isn't running.</li>
+      <li>Connecting to the Mova Flow app at <code>127.0.0.1</code> — the only address the extension sends anything to; your browser may ask you to allow it access to apps on this computer.</li>
     </ul>
 
     <h2>Data retention and deletion</h2>
