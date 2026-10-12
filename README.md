@@ -22,6 +22,7 @@ A local audio transcription app built on [whisper.cpp](https://github.com/ggml-o
 - [Development](#development)
 - [Security](#security)
 - [Documentation](#documentation)
+- [Support](#support)
 - [License](#license)
 
 ## Download
@@ -233,6 +234,10 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full threat model and d
 - [docs/API.md](docs/API.md) — full HTTP API reference with example requests and responses.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, code style, PR checklist.
 - [SECURITY.md](SECURITY.md) — how to report a vulnerability.
+
+## Support
+
+Mova Flow is free. If it saves you time, you can chip in via [GitHub Sponsors](https://github.com/sponsors/f3an) or a [Monobank jar](https://send.monobank.ua/jar/AdPx5bxkSq).
 
 ## License
 
