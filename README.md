@@ -151,11 +151,15 @@ The first recording asks for the microphone and, on macOS, for **System Audio Re
 
 ## Browser extension
 
-[**Mova Flow Meet Recorder**](https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh) is a companion Chrome extension that records a Google Meet call — both sides of the conversation, not just what you hear — and sends it to your Mova Flow host for transcription over the same shared-secret/bearer-token flow the desktop app uses.
+[**Mova Flow Meet Recorder**](https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh) is a companion Chrome / Brave extension that records calls in the browser — **Google Meet, Microsoft Teams, Zoom (web client) and Jitsi Meet** — both sides of the conversation, not just what you hear, and hands them to this app on the same computer, which transcribes them through its own host connection and vocabulary into its own History.
 
-- Adds a **Record** button right into Meet's own call-controls toolbar, or use the same button from the extension's popup.
-- Records everyone else from the tab, and your own side from the audio Meet itself sends — no microphone permission needed, and silent while you're muted. The two sides stay on separate channels, so the transcript marks who said what (`Me:` / names from Meet's captions).
-- If the host can't be reached, the recording is saved to Downloads as a `.wav` instead — upload it manually once the host is back.
+<p align="center"><img src="site/screenshots/extension-side-panel.gif" width="280" alt="The extension's side panel: a recording runs with a timer, is sent to Mova Flow and transcribed, and shows up in History"></p>
+
+- **Needs this app (0.4.12 or newer) running on the same computer** — the extension only records; it talks to the app over its local bridge (`127.0.0.1:5057`, see [ARCHITECTURE.md](docs/ARCHITECTURE.md)). Without the app, a recording is saved to Downloads as a `.wav` instead.
+- Adds a **Record** button right into each call's own controls (next to mic/camera in Meet, Zoom's bottom bar, Teams' meeting controls, Jitsi's toolbox), plus the same button in the popup.
+- A **side panel** that stays open next to the call: Record, the app's History (search, copy, download, delete, transcribe what's waiting), Upload and Settings.
+- Records everyone else from the tab, and your own side from the audio the call itself sends — no microphone permission, and silent while you're muted (Zoom's web client sends no such audio, so there it's the microphone Zoom opened, silenced while Zoom shows you muted). The two sides stay on separate channels, so the transcript says `Me:` / `Others:` — or real names on Meet, from its captions.
+- Chrome only lets an extension capture a tab after you've called on it there, so the first recording on a call takes **⌥⇧R** (Alt+Shift+R) or a right-click → *Record this call with Mova Flow*; the extension says so when it's needed.
 
 **[Get it on the Chrome Web Store →](https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh)** — or build it yourself from [source](https://github.com/f3an/mova-flow-meet-recorder). See the [privacy policy](https://f3an.github.io/Mova-Flow/privacy.html) for what data it handles.
 

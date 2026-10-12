@@ -125,6 +125,10 @@
   .gallery figure:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -20px rgba(44,66,53,.45); }
   .gallery img { display: block; width: 100%; }
   .gallery figcaption { font-family: var(--mono); font-size: 12px; color: var(--muted); padding: 10px 14px; border-top: 1px solid var(--line); }
+  /* The extension's shots are portrait (a side panel): sized to the row, centred on the page colour. */
+  .gallery .ext-shot { display: flex; flex-direction: column; }
+  .gallery .ext-shot img { flex: 1; width: auto; max-width: 100%; height: 360px; object-fit: contain; padding: 18px 0; margin: 0 auto; box-sizing: content-box; }
+  .gallery .ext-shot { background: var(--paper-2); }
   .security { background: var(--moss-dark); color: #f3f1ea; }
   .security .wrap { max-width: 760px; text-align: center; }
   .security h2 { color: #fff; }
@@ -190,7 +194,7 @@
     <p class="lead reveal" style="--i:5">Mova Flow records Zoom, Teams, Telegram and Google Meet and turns them into transcripts that say who said what — with Whisper running on your hardware. No cloud, no subscription, nothing leaves your network.</p>
     <div class="cta-row reveal" style="--i:6">
       <a class="btn btn-primary" href="https://github.com/f3an/Mova-Flow/releases/latest">↓ Download for Windows &amp; macOS</a>
-      <a class="btn btn-secondary" href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Add the Meet extension</a>
+      <a class="btn btn-secondary" href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Add the browser extension</a>
     </div>
     <div class="chip-row reveal" style="--i:7">
       <span class="chip">100% local · Whisper large-v3</span>
@@ -226,12 +230,13 @@
     <div class="wrap">
       <div class="text">
         <div class="eyebrow reveal">Chrome extension</div>
-        <h2 class="reveal" style="--i:1">On <b>Google Meet</b>, too.</h2>
-        <p class="reveal" style="--i:2">The <a href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Meet Recorder</a> extension records the call right in the browser — a Record button sits next to your mic and camera.</p>
+        <h2 class="reveal" style="--i:1">Calls in the <b>browser</b>, too.</h2>
+        <p class="reveal" style="--i:2">The <a href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Meet Recorder</a> extension records <b>Google Meet, Microsoft Teams, Zoom and Jitsi</b> right in the browser — a Record button sits in each call's own controls. It hands the recording to the Mova Flow app on the same computer, which transcribes it.</p>
         <ul class="ticks reveal" style="--i:3">
-          <li>No microphone access — your voice comes from what Meet already sends</li>
+          <li>No microphone access — your voice comes from what the call already sends</li>
           <li>Reads Meet's captions to put <b>real names</b> on every line</li>
-          <li>Sends to your own Mova Flow host — and lands in the app's History</li>
+          <li>A <b>side panel</b> that stays open next to the call — with the app's History and uploads</li>
+          <li>Needs the Mova Flow app running on the same computer</li>
         </ul>
       </div>
       <div class="reveal-scale" style="--i:2">
@@ -263,7 +268,7 @@
       <div class="text">
         <div class="eyebrow reveal">One place for every call</div>
         <h2 class="reveal" style="--i:1">One host. <b>One History.</b></h2>
-        <p class="reveal" style="--i:2">The desktop app records Zoom, Teams and Telegram; the extension records Meet. Both send to the same host, and every call ends up in the same History — searchable, replayable, on your own laptop.</p>
+        <p class="reveal" style="--i:2">The desktop app records Zoom, Teams and Telegram; the extension records calls in the browser and hands them to the app. Everything goes to the same host, and every call ends up in the same History — searchable, replayable, on your own laptop.</p>
         <ul class="ticks reveal" style="--i:3">
           <li>Both sides of the call on separate channels — overlaps keep both voices</li>
           <li>Play back the audio, copy the text, download a .txt</li>
@@ -440,7 +445,7 @@
   <!-- ─── screenshots ──────────────────────────────────────────────── -->
   <section class="plain" id="screenshots" style="background:var(--paper-2)">
     <h2 class="reveal">See it running</h2>
-    <p class="section-sub reveal" style="--i:1">The real interface — uploads, call recording, history, server setup and settings.</p>
+    <p class="section-sub reveal" style="--i:1">The real interface — uploads, call recording, history, server setup and settings, and the browser extension.</p>
     <div class="gallery">
       <figure class="reveal-scale" style="--i:0"><img src="screenshots/02-record.png" alt="Record tab during a call, with level meters and a transcript marked Me / Others" loading="lazy"><figcaption>Record — both sides of a call, labelled Me / Others</figcaption></figure>
       <figure class="reveal-scale" style="--i:1"><img src="screenshots/03-source-picker.png" alt="Picker with window thumbnails for choosing which app to record" loading="lazy"><figcaption>On macOS, pick the app the call is in</figcaption></figure>
@@ -448,6 +453,8 @@
       <figure class="reveal-scale" style="--i:1"><img src="screenshots/04-history.png" alt="History tab listing past transcriptions with playback and download" loading="lazy"><figcaption>History — every transcript, with audio playback</figcaption></figure>
       <figure class="reveal-scale" style="--i:0"><img src="screenshots/05-server-host.png" alt="Server tab in host role, showing model selection and network exposure" loading="lazy"><figcaption>Server — host role: model, LAN exposure, secret key</figcaption></figure>
       <figure class="reveal-scale" style="--i:1"><img src="screenshots/07-settings.png" alt="Settings tab with microphone, interface language and updates" loading="lazy"><figcaption>Settings — microphone, language, updates</figcaption></figure>
+      <figure class="reveal-scale ext-shot" style="--i:0"><img src="screenshots/extension-side-panel.gif" alt="The extension's side panel: a recording runs with a timer, is sent to Mova Flow and transcribed, and shows up in History" loading="lazy"><figcaption>Extension — the side panel, from Record to transcript</figcaption></figure>
+      <figure class="reveal-scale ext-shot" style="--i:1"><img src="screenshots/extension-history.png" alt="The extension's History tab: recordings from Jitsi, Google Meet, Zoom and Teams, one still waiting for a transcript" loading="lazy"><figcaption>Extension — the app's History, right next to the call</figcaption></figure>
     </div>
   </section>
 
@@ -469,7 +476,7 @@
       <tbody>
         <tr><td>Windows</td><td><code>Mova-Flow-Setup-&lt;version&gt;.exe</code></td><td>Full app — host (CUDA or CPU) and client</td></tr>
         <tr><td>macOS</td><td><code>Mova-Flow-&lt;version&gt;.dmg</code></td><td>Full app on Apple Silicon (host with Metal + client); Intel Macs: client</td></tr>
-        <tr><td>Chrome / Brave</td><td><a href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Meet Recorder</a></td><td>Records Google Meet into your host</td></tr>
+        <tr><td>Chrome / Brave</td><td><a href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Meet Recorder</a></td><td>Records Google Meet, Teams, Zoom (web) and Jitsi calls — needs the app on the same computer</td></tr>
       </tbody>
     </table>
     <p class="download-note reveal" style="--i:3">Installers aren't code-signed: Windows may show a SmartScreen warning ("More info" → "Run anyway"); macOS will say the app "is damaged" — open the <code>.dmg</code> and double-click <strong>Install &amp; Open.command</strong> instead, it installs and clears the flag in one step.</p>
@@ -482,7 +489,7 @@
   <footer>
     <div class="footer-links">
       <a href="https://github.com/f3an/Mova-Flow">GitHub</a>
-      <a href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Meet Recorder extension</a>
+      <a href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Browser extension</a>
       <a href="privacy.html">Privacy</a>
       <a href="https://github.com/f3an/Mova-Flow/blob/master/docs/ARCHITECTURE.md">Architecture</a>
       <a href="https://github.com/f3an/Mova-Flow/blob/master/docs/API.md">API</a>
