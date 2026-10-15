@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('api', {
   regenerate_secret: () => ipcRenderer.invoke('regenerate-secret'),
   get_token: () => ipcRenderer.invoke('get-token'),
   set_language: (lang: string) => ipcRenderer.invoke('set-language', lang),
+  set_theme: (theme: string) => ipcRenderer.invoke('set-theme', theme),
   save_client_history_entry: (
     filename: string,
     language: string,

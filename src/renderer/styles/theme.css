@@ -1,0 +1,56 @@
+:root {
+  /* Light / dark follows nativeTheme.themeSource (Settings → Appearance), which
+     Electron reflects into prefers-color-scheme — so "Auto" is just the OS. */
+  color-scheme: light dark;
+  --ink: #1a1d1a;
+  --paper: #f3f1ea;
+  --line: #d8d4c6;
+  --moss: #3f5c4a;
+  --moss-dark: #2c4235;
+  --rust: #a8532e;
+  /* Sidebar, title strip and update banner — keep in sync with THEME_COLORS in main/index.ts. */
+  --chrome: #2c4235;
+  /* Moss as text or an icon on the page background (not as a fill). */
+  --moss-ink: #3f5c4a;
+  --moss-ink-strong: #2c4235;
+  --muted: #6b6858;
+  --faint: #8a8672;
+  --surface: #ffffff;
+  --surface-2: #faf9f4;
+  --sunken: #ece9dd;
+  --hover: #eef2ef;
+  --preview: #e4e0d3;
+  --panel: rgba(255, 255, 255, 0.5);
+  --danger-ink: #a13a2a;
+  --status-processing: #fdf0e4;
+  --status-done: #e6ede8;
+  --status-error: #f6e0dc;
+  --mono: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+  --serif: 'Iowan Old Style', 'Georgia', serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e6e3d8;
+    --paper: #161917;
+    --line: #353b36;
+    --moss: #4a6b57;
+    --moss-dark: #3f5c4a;
+    --rust: #c96a42;
+    --chrome: #1c2a22;
+    --moss-ink: #8fbf9f;
+    --moss-ink-strong: #a8d0b4;
+    --muted: #a39f8e;
+    --faint: #87836f;
+    --surface: #1f2320;
+    --surface-2: #1a1d1b;
+    --sunken: #272b28;
+    --hover: #26302a;
+    --preview: #2a2f2b;
+    --panel: rgba(255, 255, 255, 0.03);
+    --danger-ink: #e8806c;
+    --status-processing: #3a2a1e;
+    --status-done: #22332a;
+    --status-error: #3d2320;
+  }
+}

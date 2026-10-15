@@ -1,4 +1,17 @@
-import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, IpcMainInvokeEvent, nativeImage, net, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  Notification,
+  Tray,
+  dialog,
+  ipcMain,
+  IpcMainInvokeEvent,
+  nativeImage,
+  nativeTheme,
+  net,
+  shell,
+} from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { autoUpdater } from 'electron-updater';
@@ -40,6 +53,7 @@ import {
 } from './recordings';
 
 type UiLang = 'en' | 'uk';
+type UiTheme = 'system' | 'light' | 'dark';
 
 interface Config {
   role: 'host' | 'client';
@@ -65,6 +79,8 @@ interface Config {
   vocabulary: Vocabulary;
   // Client: let the host add its own vocabulary to this machine's uploads.
   use_host_vocabulary: boolean;
+  // 'system' follows the OS light/dark setting.
+  theme: UiTheme;
   // Unpacked builds of the Meet Recorder extension allowed to read History
   // over the extension bridge (the Web Store one always is) — see
   // localBridge.ts. Optional, hand-edited, for development only.
@@ -84,6 +100,7 @@ const DEFAULT_CONFIG: Config = {
   auto_update: false,
   vocabulary: EMPTY_VOCABULARY,
   use_host_vocabulary: true,
+  theme: 'system',
 };
 
 function modelChoiceFromConfig(cfg: Config): ModelChoice {
@@ -304,7 +321,35 @@ function createTray(): void {
   tray.on('click', showMainWindow);
 }
 
+// The page background and the sidebar/title strip color (--paper and --chrome
+// in renderer/styles/theme.css) for each theme — the window and the Windows/Linux titlebar
+// overlay are painted natively, outside the CSS.
+const THEME_COLORS = {
+  light: { paper: '#f3f1ea', chrome: '#2c4235' },
+  dark: { paper: '#161917', chrome: '#1c2a22' },
+};
+
+function themeColors(): { paper: string; chrome: string } {
+  return nativeTheme.shouldUseDarkColors ? THEME_COLORS.dark : THEME_COLORS.light;
+}
+
+function applyTheme(theme: UiTheme): void {
+  // Electron reflects themeSource into the page's prefers-color-scheme, so
+  // the stylesheet switches on its own; only the native parts need repainting.
+  nativeTheme.themeSource = theme === 'light' || theme === 'dark' ? theme : 'system';
+}
+
+nativeTheme.on('updated', () => {
+  if (!mainWindow) return;
+  const colors = themeColors();
+  mainWindow.setBackgroundColor(colors.paper);
+  if (process.platform !== 'darwin') {
+    mainWindow.setTitleBarOverlay({ color: colors.chrome, symbolColor: '#e9e7dc', height: 36 });
+  }
+});
+
 function createWindow(): void {
+  const colors = themeColors();
   const win = new BrowserWindow({
     title: 'Mova Flow',
     icon: path.join(__dirname, '..', '..', 'build', 'icon.png'),
@@ -314,16 +359,16 @@ function createWindow(): void {
     minHeight: 420,
     maxWidth: 1200,
     // Paper background right away so there's no white flash before the CSS loads.
-    backgroundColor: '#f3f1ea',
+    backgroundColor: colors.paper,
     autoHideMenuBar: true,
     // Windows Controls Overlay: the native minimize/maximize/close buttons stay
     // (OS-drawn), just wrapped in a custom titlebar instead of the stock white strip.
     // titleBarOverlay is Windows/Linux-only; on macOS `titleBarStyle: 'hidden'` alone
     // draws the traffic lights on top of the page instead — trafficLightPosition below
-    // centers them in the same 36px-tall bar, and style.css reserves room for them.
+    // centers them in the same 36px-tall bar, and styles/layout.css reserves room for them.
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#2c4235',
+      color: colors.chrome,
       symbolColor: '#e9e7dc',
       height: 36,
     },
@@ -398,6 +443,7 @@ ipcMain.handle('get-state', () => {
     modelPath: cfg.model_path,
     lanExpose: cfg.lan_expose,
     autoUpdate: cfg.auto_update,
+    theme: cfg.theme,
     appVersion: app.getVersion(),
   };
 });
@@ -448,6 +494,13 @@ ipcMain.handle('choose-model-file', async () => {
 
 ipcMain.handle('set-language', (_evt: IpcMainInvokeEvent, lang: UiLang) => {
   writeConfig({ ...readConfig(), language: lang === 'uk' ? 'uk' : 'en' });
+  return { ok: true };
+});
+
+ipcMain.handle('set-theme', (_evt: IpcMainInvokeEvent, theme: UiTheme) => {
+  const clean: UiTheme = theme === 'light' || theme === 'dark' ? theme : 'system';
+  writeConfig({ ...readConfig(), theme: clean });
+  applyTheme(clean);
   return { ok: true };
 });
 
@@ -716,6 +769,7 @@ if (!isPrimaryInstance) {
 app.whenReady().then(() => {
   if (!isPrimaryInstance) return;
   Menu.setApplicationMenu(null);
+  applyTheme(readConfig().theme);
   createWindow();
   createTray();
   initAutoUpdater();

@@ -1,0 +1,51 @@
+/* Correcting a transcript: double-click a word or select a phrase. */
+.transcript-text.correctable {
+  cursor: text;
+}
+
+.correct-pop {
+  position: fixed;
+  z-index: 50;
+  width: 320px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
+}
+
+.correct-from {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+
+.correct-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.correct-pop .checkbox-row {
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.correct-pop .actions {
+  margin-top: 12px;
+}
+
+.correct-note {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--moss-ink);
+}
