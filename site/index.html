@@ -134,11 +134,22 @@
   .security h2 { color: #fff; }
   .security p { color: rgba(243, 241, 234, 0.85); font-size: 17px; }
   .security a { color: #fff; }
-  .download-table { width: 100%; border-collapse: collapse; font-size: 15px; max-width: 760px; margin: 0 auto; }
-  .download-table th, .download-table td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); }
-  .download-table th { font-family: var(--mono); font-size: 12px; color: var(--muted); font-weight: 600; }
-  .download-table code { font-family: var(--mono); font-size: 12.5px; }
-  .download-note { max-width: 760px; margin: 18px auto 0; font-size: 13.5px; color: var(--muted); }
+  .dl-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; max-width: 980px; margin: 0 auto; }
+  .dl-card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 22px; display: grid; gap: 10px; align-content: start; transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
+  .dl-card:hover { transform: translateY(-3px); box-shadow: 0 18px 40px -22px rgba(44,66,53,.5); }
+  .dl-card h3 { margin: 0; font-size: 22px; font-weight: 500; }
+  .dl-card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .dl-head { display: flex; justify-content: space-between; align-items: center; }
+  .dl-ic { width: 30px; height: 30px; color: var(--moss-dark); }
+  .dl-mine { display: none; font-family: var(--mono); font-size: 11px; color: #f3f1ea; background: var(--rust); border-radius: 999px; padding: 3px 10px; }
+  .dl-card.mine { border-color: var(--rust); box-shadow: 0 0 0 3px rgba(168,83,46,.15); }
+  .dl-card.mine .dl-mine { display: inline-block; }
+  .dl-card:not(.mine) .dl-btn.btn-primary { background: transparent; color: var(--moss-dark); box-shadow: inset 0 0 0 1px var(--moss-dark); }
+  .dl-btn { justify-self: start; margin-top: 6px; }
+  .dl-meta { font-family: var(--mono); font-size: 12px; color: var(--muted); word-break: break-all; }
+  .dl-note { font-size: 13px !important; }
+  @media (max-width: 860px) { .dl-grid { grid-template-columns: 1fr; } }
+  .download-note { max-width: 760px; margin: 18px auto 0; font-size: 13.5px; color: var(--muted); text-align: center; }
   footer { padding: 40px 20px 56px; text-align: center; font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
   footer .footer-links { margin-bottom: 10px; }
   footer .footer-links a { color: var(--moss-dark); margin: 0 10px; text-decoration: none; }
@@ -193,7 +204,7 @@
     <h1 id="heroTitle">Your calls, transcribed<br><b>on your own machines.</b></h1>
     <p class="lead reveal" style="--i:5">Mova Flow records Zoom, Teams, Telegram and Google Meet and turns them into transcripts that say who said what — with Whisper running on your hardware. No cloud, no subscription, nothing leaves your network.</p>
     <div class="cta-row reveal" style="--i:6">
-      <a class="btn btn-primary" href="https://github.com/f3an/Mova-Flow/releases/latest">↓ Download for Windows &amp; macOS</a>
+      <a class="btn btn-primary" id="hero-dl" href="#download">↓ Download for Windows &amp; macOS</a>
       <a class="btn btn-secondary" href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Add the browser extension</a>
     </div>
     <div class="chip-row reveal" style="--i:7">
@@ -470,20 +481,33 @@
   <!-- ─── download ─────────────────────────────────────────────────── -->
   <section class="plain" id="download">
     <h2 class="reveal">Download</h2>
-    <p class="section-sub reveal" style="--i:1">Free and open source. Grab the latest build from the <a href="https://github.com/f3an/Mova-Flow/releases/latest">Releases page</a>.</p>
-    <table class="download-table reveal" style="--i:2">
-      <thead><tr><th>Platform</th><th>Asset</th><th>What you get</th></tr></thead>
-      <tbody>
-        <tr><td>Windows</td><td><code>Mova-Flow-Setup-&lt;version&gt;.exe</code></td><td>Full app — host (CUDA or CPU) and client</td></tr>
-        <tr><td>macOS</td><td><code>Mova-Flow-&lt;version&gt;.dmg</code></td><td>Full app on Apple Silicon (host with Metal + client); Intel Macs: client</td></tr>
-        <tr><td>Chrome / Brave</td><td><a href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Meet Recorder</a></td><td>Records Google Meet, Teams, Zoom (web) and Jitsi calls — needs the app on the same computer</td></tr>
-      </tbody>
-    </table>
-    <p class="download-note reveal" style="--i:3">Installers aren't code-signed: Windows may show a SmartScreen warning ("More info" → "Run anyway"); macOS will say the app "is damaged" — open the <code>.dmg</code> and double-click <strong>Install &amp; Open.command</strong> instead, it installs and clears the flag in one step.</p>
-    <div class="cta-row reveal" style="--i:4;margin-top:32px">
-      <a class="btn btn-primary" href="https://github.com/f3an/Mova-Flow/releases/latest">↓ Download latest release</a>
-      <a class="btn btn-secondary" href="https://github.com/f3an/Mova-Flow">View on GitHub</a>
+    <p class="section-sub reveal" style="--i:1">Free and open source. <span id="dl-ver">The latest release</span> — the app updates itself when a new version is out.</p>
+    <div class="dl-grid reveal" style="--i:2">
+      <article class="dl-card" data-os="win">
+        <div class="dl-head"><svg class="dl-ic" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M1 2.5l5.5-.8v5.6H1zm6.5-.9L15 .5v6.8H7.5zM1 8.7h5.5v5.6L1 13.5zm6.5 0H15v6.8l-7.5-1.1z"/></svg><span class="dl-mine">your system</span></div>
+        <h3>Windows</h3>
+        <p>Full app — the GPU host (CUDA or CPU) and the client. Windows 10 and 11.</p>
+        <a class="btn btn-primary dl-btn" href="https://github.com/f3an/Mova-Flow/releases/latest">↓ Download for Windows</a>
+        <small class="dl-meta">Mova-Flow-Setup-&lt;version&gt;.exe</small>
+        <p class="dl-note">If SmartScreen warns you: “More info” → “Run anyway”.</p>
+      </article>
+      <article class="dl-card" data-os="mac">
+        <div class="dl-head"><svg class="dl-ic" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M11 1c0 1.3-.9 2.6-2.3 2.6C8.6 2.3 9.6 1.1 11 1zM8.4 4.2c.7 0 1.6-.6 2.6-.6 1.3 0 2.2.7 2.7 1.5-2.2 1.2-1.8 4.3.4 5.1-.4 1.2-1.6 3.6-3 3.6-.9 0-1.2-.6-2.4-.6-1.2 0-1.6.6-2.4.6-1.5 0-3.3-3.2-3.3-6 0-2.7 1.8-4.1 3.4-4.1 1 0 1.6.5 2 .5z"/></svg><span class="dl-mine">your system</span></div>
+        <h3>macOS</h3>
+        <p>Full app on Apple Silicon — the host with Metal and the client.</p>
+        <a class="btn btn-primary dl-btn" href="https://github.com/f3an/Mova-Flow/releases/latest">↓ Download for macOS</a>
+        <small class="dl-meta">Mova-Flow-&lt;version&gt;.dmg</small>
+        <p class="dl-note">Signed and notarized by Apple — opens without warnings.</p>
+      </article>
+      <article class="dl-card" data-os="ext">
+        <div class="dl-head"><svg class="dl-ic" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 4.2a2.8 2.8 0 110 5.6 2.8 2.8 0 010-5.6zM8 2.4c2.1 0 3.9 1.1 4.9 2.8H8a4.2 4.2 0 00-3.8 2.5L2.6 4.9A5.6 5.6 0 018 2.4zM2.4 8c0-.7.1-1.4.4-2l2.4 4.2A4.2 4.2 0 008 12.2l-1.6 2.7A5.6 5.6 0 012.4 8zm5.5 5.6l2.4-4.2A4.2 4.2 0 0012 6.6h3.2A5.6 5.6 0 017.9 13.6z"/></svg></div>
+        <h3>Chrome / Brave</h3>
+        <p>Meet Recorder records Google Meet, Teams, Zoom (web) and Jitsi — needs the app on the same computer.</p>
+        <a class="btn btn-secondary dl-btn" href="https://chromewebstore.google.com/detail/mova-flow-meet-recorder/kdeeohghjiengnkgfpjkakeajhnddfnh">Add to Chrome</a>
+        <small class="dl-meta">Chrome Web Store</small>
+      </article>
     </div>
+    <p class="download-note reveal" style="--i:3"><a href="https://github.com/f3an/Mova-Flow/releases">All versions and release notes →</a> · <a href="https://github.com/f3an/Mova-Flow">View on GitHub</a></p>
   </section>
 
   <footer>
@@ -510,6 +534,32 @@
   const back = (x) => { const c = 1.5; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
   const lerp = (a, b, x) => a + (b - a) * x;
   const wave = (t, s) => (Math.sin(t * 7.1 + s) * .5 + Math.sin(t * 13.3 + s * 2.1) * .3 + Math.sin(t * 3.7 + s * 3.3) * .2) * .5 + .5;
+
+  // ── download: the latest GitHub release for each OS ──
+  (() => {
+    const box = document.getElementById('download'); if (!box) return;
+    const ua = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || '';
+    const mine = /mac/i.test(ua) ? 'mac' : /win/i.test(ua) ? 'win' : null;
+    if (mine) {
+      box.querySelector(`.dl-card[data-os="${mine}"]`)?.classList.add('mine');
+      const hero = document.getElementById('hero-dl'); if (hero) hero.textContent = `↓ Download for ${mine === 'mac' ? 'macOS' : 'Windows'}`;
+    }
+    const pick = { mac: (a) => /\.dmg$/i.test(a.name), win: (a) => /\.exe$/i.test(a.name) };
+    fetch('https://api.github.com/repos/f3an/Mova-Flow/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((rel) => {
+        const v = (rel.tag_name || '').replace(/^v/, ''), d = new Date(rel.published_at);
+        const ver = document.getElementById('dl-ver');
+        if (ver && v) ver.textContent = `Version ${v}${isNaN(d) ? '' : ', ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+        box.querySelectorAll('.dl-card').forEach((card) => {
+          const test = pick[card.dataset.os]; if (!test) return;
+          const a = (rel.assets || []).find(test); if (!a) return;
+          const btn = card.querySelector('.dl-btn'); btn.href = a.browser_download_url;
+          card.querySelector('.dl-meta').textContent = `${a.name} · ${Math.round(a.size / 1048576)} MB`;
+        });
+      })
+      .catch(() => { /* no release or API limit — buttons fall back to the Releases page */ });
+  })();
 
   // ── hero title: word by word ──
   const title = document.getElementById('heroTitle');
