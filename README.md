@@ -202,6 +202,7 @@ src/
     index.ts             contextBridge: window.api, window.platform
   renderer/
     index.html, style.css, renderer.ts, i18n.ts   the UI (5 tabs)
+    styles/              the CSS, one file per area; style.css imports them in order
     callRecorder.ts      mic + system audio → aligned stereo WAV
     sourcePicker.ts      "what to record" modal with window thumbnails
 native/macos/audio-tap/   Swift helper: Core Audio process tap, app list, window thumbnails

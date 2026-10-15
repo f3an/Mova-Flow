@@ -1,0 +1,242 @@
+.drop {
+  border: 1.5px dashed var(--line);
+  border-radius: 4px;
+  padding: 56px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  position: relative;
+}
+
+.drop:hover,
+.drop.drag {
+  border-color: var(--moss);
+  background: rgba(63, 92, 74, 0.04);
+}
+
+.drop input {
+  display: none;
+}
+
+.drop-label {
+  font-size: 17px;
+  margin-bottom: 6px;
+}
+
+.drop-hint {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.lang-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+select {
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink);
+}
+
+.job {
+  margin-top: 32px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.job-head {
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.job-name {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 400px;
+}
+
+.job-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.status-queued {
+  background: var(--sunken);
+  color: var(--muted);
+}
+
+.status-processing {
+  background: var(--status-processing);
+  color: var(--rust);
+}
+
+.status-done {
+  background: var(--status-done);
+  color: var(--moss-ink-strong);
+}
+
+.status-error {
+  background: var(--status-error);
+  color: var(--danger-ink);
+}
+
+.progress-text {
+  padding: 14px 20px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.bar-track {
+  height: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--rust);
+  width: 30%;
+  animation: slide 1.4s ease-in-out infinite;
+}
+
+@keyframes slide {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.transcript-box {
+  padding: 20px;
+}
+
+.transcript-text {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  max-height: 340px;
+  overflow-y: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 16px;
+  color: var(--ink);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* History cards: buttons sit directly in the card (no padded wrapper like
+ * .transcript-box gives the Upload tab's job actions), so they need their
+ * own horizontal breathing room to match .job-head/.progress-text above. */
+.job > .actions {
+  padding: 2px 20px 20px;
+  margin-top: 4px;
+}
+
+.job > .history-audio:has(audio) {
+  padding: 14px 20px 0;
+}
+
+.history-audio audio {
+  width: 100%;
+}
+
+/* Only when the transcript toggle sits below an already-padded button row
+ * (History), not when it's the Upload tab's self-contained result box. */
+.actions + .transcript-box {
+  margin: 6px 20px 20px;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+button.action {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--moss);
+  background: var(--moss);
+  color: white;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+button.action:hover {
+  background: var(--chrome);
+}
+
+button.action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.action.secondary {
+  background: var(--surface);
+  color: var(--moss-ink);
+}
+
+button.action.secondary:hover {
+  background: var(--hover);
+}
+
+button.action.danger {
+  background: var(--rust);
+  border-color: var(--rust);
+}
+
+.error-text {
+  padding: 16px 20px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--danger-ink);
+}
+
+.job-saved {
+  padding: 0 20px 4px;
+  margin-top: -8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.banner {
+  padding: 32px 24px;
+  border: 1px dashed var(--line);
+  border-radius: 4px;
+  text-align: center;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 13px;
+}

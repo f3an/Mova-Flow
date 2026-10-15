@@ -1,0 +1,222 @@
+.role-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.role-option {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  cursor: pointer;
+  text-align: center;
+  background: var(--surface);
+}
+
+.role-option.selected {
+  border-color: var(--moss);
+  background: rgba(63, 92, 74, 0.08);
+}
+
+.role-option h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.role-option p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.scan-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.scan-row .secret-hint {
+  margin: 0;
+}
+
+.scan-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 16px;
+  background: var(--surface-2);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+}
+
+.host-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 84px;
+  padding: 10px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: none;
+  font-family: var(--serif);
+  text-align: center;
+}
+
+.host-card:hover {
+  background: var(--hover);
+  border-color: var(--line);
+}
+
+.host-card .host-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--moss);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.host-card .host-name {
+  font-size: 12px;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.host-card .host-addr {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.field-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.field-row > div {
+  flex: 1;
+}
+
+.field-row label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.field-row input,
+.field-row textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.field-row textarea {
+  resize: vertical;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+.field-row input:disabled {
+  background: var(--sunken);
+  color: var(--faint);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.checkbox-row input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--moss);
+  cursor: pointer;
+}
+
+.srv-status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.srv-message {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.about-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.lan-url {
+  margin-top: 12px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--moss-ink-strong);
+}
+
+.secret-box {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.secret-box label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.secret-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.secret-row {
+  display: flex;
+  gap: 8px;
+}
+
+.secret-row input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--sunken);
+  color: var(--ink);
+}

@@ -322,7 +322,7 @@ function createTray(): void {
 }
 
 // The page background and the sidebar/title strip color (--paper and --chrome
-// in style.css) for each theme — the window and the Windows/Linux titlebar
+// in renderer/styles/theme.css) for each theme — the window and the Windows/Linux titlebar
 // overlay are painted natively, outside the CSS.
 const THEME_COLORS = {
   light: { paper: '#f3f1ea', chrome: '#2c4235' },
@@ -365,7 +365,7 @@ function createWindow(): void {
     // (OS-drawn), just wrapped in a custom titlebar instead of the stock white strip.
     // titleBarOverlay is Windows/Linux-only; on macOS `titleBarStyle: 'hidden'` alone
     // draws the traffic lights on top of the page instead — trafficLightPosition below
-    // centers them in the same 36px-tall bar, and style.css reserves room for them.
+    // centers them in the same 36px-tall bar, and styles/layout.css reserves room for them.
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: colors.chrome,
