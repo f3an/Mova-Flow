@@ -1,12 +1,58 @@
 :root {
+  /* Light / dark follows nativeTheme.themeSource (Settings → Appearance), which
+     Electron reflects into prefers-color-scheme — so "Auto" is just the OS. */
+  color-scheme: light dark;
   --ink: #1a1d1a;
   --paper: #f3f1ea;
   --line: #d8d4c6;
   --moss: #3f5c4a;
   --moss-dark: #2c4235;
   --rust: #a8532e;
+  /* Sidebar, title strip and update banner — keep in sync with CHROME_COLOR in main/index.ts. */
+  --chrome: #2c4235;
+  /* Moss as text or an icon on the page background (not as a fill). */
+  --moss-ink: #3f5c4a;
+  --moss-ink-strong: #2c4235;
+  --muted: #6b6858;
+  --faint: #8a8672;
+  --surface: #ffffff;
+  --surface-2: #faf9f4;
+  --sunken: #ece9dd;
+  --hover: #eef2ef;
+  --preview: #e4e0d3;
+  --panel: rgba(255, 255, 255, 0.5);
+  --danger-ink: #a13a2a;
+  --status-processing: #fdf0e4;
+  --status-done: #e6ede8;
+  --status-error: #f6e0dc;
   --mono: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
   --serif: 'Iowan Old Style', 'Georgia', serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e6e3d8;
+    --paper: #161917;
+    --line: #353b36;
+    --moss: #4a6b57;
+    --moss-dark: #3f5c4a;
+    --rust: #c96a42;
+    --chrome: #1c2a22;
+    --moss-ink: #8fbf9f;
+    --moss-ink-strong: #a8d0b4;
+    --muted: #a39f8e;
+    --faint: #87836f;
+    --surface: #1f2320;
+    --surface-2: #1a1d1b;
+    --sunken: #272b28;
+    --hover: #26302a;
+    --preview: #2a2f2b;
+    --panel: rgba(255, 255, 255, 0.03);
+    --danger-ink: #e8806c;
+    --status-processing: #3a2a1e;
+    --status-done: #22332a;
+    --status-error: #3d2320;
+  }
 }
 
 /* Any class that sets display (flex, grid…) would otherwise beat the
@@ -39,7 +85,7 @@ body {
   -webkit-app-region: drag;
   flex: 0 0 36px;
   height: 36px;
-  background: var(--moss-dark);
+  background: var(--chrome);
   color: rgba(233, 231, 220, 0.85);
   display: flex;
   align-items: center;
@@ -83,7 +129,7 @@ body {
   justify-content: center;
   gap: 14px;
   padding: 10px 20px;
-  background: var(--moss-dark);
+  background: var(--chrome);
   color: rgba(233, 231, 220, 0.95);
   font-family: var(--mono);
   font-size: 12px;
@@ -102,7 +148,7 @@ body {
   /* No overflow-y here on purpose: setting it to auto/scroll forces overflow-x
    * to auto too (per the CSS overflow spec), which clips (and un-clicks) the
    * collapse button poking out via its negative `right` offset below. */
-  background: var(--moss-dark);
+  background: var(--chrome);
   color: #e9e7dc;
   display: flex;
   flex-direction: column;
@@ -120,7 +166,7 @@ body {
   border-radius: 50%;
   border: 1px solid var(--line);
   background: var(--paper);
-  color: var(--moss-dark);
+  color: var(--moss-ink-strong);
   font-size: 12px;
   line-height: 1;
   display: flex;
@@ -132,7 +178,7 @@ body {
 }
 
 .nav-collapse-btn:hover {
-  background: #eef2ef;
+  background: var(--hover);
 }
 
 /* Manually toggled via the collapse button — mirrors the auto-collapse rules
@@ -232,7 +278,7 @@ body {
   top: 50%;
   transform: translateY(-50%) translateX(-4px);
   background: var(--ink);
-  color: #f3f1ea;
+  color: var(--paper);
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.02em;
@@ -308,7 +354,7 @@ body {
 }
 
 .lang-switch-row select option {
-  background: var(--moss-dark);
+  background: var(--chrome);
   color: #e9e7dc;
 }
 
@@ -375,7 +421,7 @@ body {
   border-radius: 4px;
   padding: 18px 20px;
   margin-bottom: 16px;
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--panel);
 }
 
 .rec-head {
@@ -387,7 +433,7 @@ body {
 .rec-source {
   font-family: var(--mono);
   font-size: 12px;
-  color: #6b6858;
+  color: var(--muted);
 }
 
 /* ── Source picker modal ─────────────────────────────────────────────── */
@@ -407,7 +453,7 @@ body {
   max-height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--paper, #f3f1ea);
+  background: var(--paper);
   border-radius: 10px;
   box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.45);
   padding: 22px 24px 18px;
@@ -432,13 +478,13 @@ body {
   height: 32px;
   font-size: 15px;
   cursor: pointer;
-  color: #6b6858;
+  color: var(--muted);
 }
 
 .picker-sub {
   margin: 6px 0 16px;
   font-size: 13px;
-  color: #6b6858;
+  color: var(--muted);
 }
 
 .picker-grid {
@@ -482,7 +528,7 @@ body {
   aspect-ratio: 16 / 10;
   border-radius: 6px;
   overflow: hidden;
-  background: #e4e0d3;
+  background: var(--preview);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -502,7 +548,7 @@ body {
 
 .picker-all {
   font-size: 38px;
-  color: var(--moss);
+  color: var(--moss-ink);
 }
 
 .picker-label {
@@ -536,7 +582,7 @@ body {
 .picker-note {
   margin: 12px 0 0;
   font-size: 12px;
-  color: #6b6858;
+  color: var(--muted);
 }
 
 .picker-actions {
@@ -547,36 +593,165 @@ body {
 }
 
 /* ── Settings ────────────────────────────────────────────────────────── */
-.settings-section {
-  padding: 22px 0;
+.settings-group {
+  margin-bottom: 28px;
+}
+
+.settings-group-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 8px 2px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.settings-saved {
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--moss-ink);
+}
+
+.settings-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/* One setting: label and hint on the left, the control on the right. */
+.setting {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 18px;
+}
+
+.setting + .setting {
   border-top: 1px solid var(--line);
 }
 
-.settings-section:first-of-type {
-  border-top: 0;
-  padding-top: 4px;
+.setting-text {
+  flex: 1;
+  min-width: 0;
 }
 
-.settings-section h3 {
-  margin: 0 0 14px;
-  font-size: 17px;
+.setting-text label,
+.setting-value {
+  display: block;
+  font-size: 14.5px;
+  color: var(--ink);
 }
 
-.settings-row {
+.setting-hint {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.setting-control {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 12px;
+}
+
+.setting-control select {
+  min-width: 190px;
+  max-width: 280px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background-color: var(--surface-2);
+  cursor: pointer;
+}
+
+/* Text areas take the full width under their label. */
+.setting.stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.setting.stacked textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink);
   font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.setting-control select:focus,
+.setting.stacked textarea:focus {
+  outline: none;
+  border-color: var(--moss);
+  box-shadow: 0 0 0 3px rgba(63, 92, 74, 0.18);
+}
+
+.setting-footnote {
+  margin: 0;
+  padding: 10px 18px 12px;
+  border-top: 1px solid var(--line);
   font-size: 12.5px;
-  color: #6b6858;
+  color: var(--muted);
+  background: var(--surface-2);
 }
 
-.settings-row label {
-  flex: 0 0 170px;
+/* On/off settings: a checkbox drawn as a switch. */
+input.switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  margin: 0;
+  border-radius: 10px;
+  background: var(--line);
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-.settings-row select {
-  max-width: 360px;
+input.switch::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+
+input.switch:checked {
+  background: var(--moss);
+}
+
+input.switch:checked::before {
+  transform: translateX(16px);
+}
+
+input.switch:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .setting:not(.stacked) {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
 }
 
 /* "Microphone: X · change" under the Record button. */
@@ -584,11 +759,11 @@ body {
   margin: 12px 0 0;
   font-family: var(--mono);
   font-size: 12px;
-  color: #6b6858;
+  color: var(--muted);
 }
 
 .rec-mic-line a {
-  color: var(--moss);
+  color: var(--moss-ink);
 }
 
 .rec-mic-warn {
@@ -621,7 +796,7 @@ body {
   gap: 10px;
   font-family: var(--mono);
   font-size: 11.5px;
-  color: #6b6858;
+  color: var(--muted);
 }
 
 .meter-track {
@@ -641,7 +816,7 @@ body {
 .rec-hint {
   margin: 12px 0 0;
   font-size: 13px;
-  color: #6b6858;
+  color: var(--muted);
   line-height: 1.5;
 }
 
@@ -673,7 +848,7 @@ body {
 .drop-hint {
   font-family: var(--mono);
   font-size: 12px;
-  color: #8a8672;
+  color: var(--faint);
 }
 
 .lang-row {
@@ -689,7 +864,7 @@ select {
   font-family: var(--mono);
   font-size: 13px;
   padding: 6px 10px;
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 3px;
   color: var(--ink);
@@ -699,7 +874,7 @@ select {
   margin-top: 32px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: white;
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -731,30 +906,30 @@ select {
 }
 
 .status-queued {
-  background: #ece9dd;
-  color: #6b6858;
+  background: var(--sunken);
+  color: var(--muted);
 }
 
 .status-processing {
-  background: #fdf0e4;
+  background: var(--status-processing);
   color: var(--rust);
 }
 
 .status-done {
-  background: #e6ede8;
-  color: var(--moss-dark);
+  background: var(--status-done);
+  color: var(--moss-ink-strong);
 }
 
 .status-error {
-  background: #f6e0dc;
-  color: #a13a2a;
+  background: var(--status-error);
+  color: var(--danger-ink);
 }
 
 .progress-text {
   padding: 14px 20px;
   font-family: var(--mono);
   font-size: 12.5px;
-  color: #6b6858;
+  color: var(--muted);
 }
 
 .bar-track {
@@ -791,11 +966,11 @@ select {
   white-space: pre-wrap;
   max-height: 340px;
   overflow-y: auto;
-  background: #faf9f4;
+  background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 3px;
   padding: 16px;
-  color: #2a2d29;
+  color: var(--ink);
 }
 
 .actions {
@@ -842,7 +1017,7 @@ button.action {
 }
 
 button.action:hover {
-  background: var(--moss-dark);
+  background: var(--chrome);
 }
 
 button.action:disabled {
@@ -851,12 +1026,12 @@ button.action:disabled {
 }
 
 button.action.secondary {
-  background: white;
-  color: var(--moss);
+  background: var(--surface);
+  color: var(--moss-ink);
 }
 
 button.action.secondary:hover {
-  background: #eef2ef;
+  background: var(--hover);
 }
 
 button.action.danger {
@@ -868,14 +1043,14 @@ button.action.danger {
   padding: 16px 20px;
   font-family: var(--mono);
   font-size: 12.5px;
-  color: #a13a2a;
+  color: var(--danger-ink);
 }
 
 .job-saved {
   padding: 0 20px 4px;
   margin-top: -8px;
   font-size: 13px;
-  color: #6b6858;
+  color: var(--muted);
 }
 
 .banner {
@@ -883,7 +1058,7 @@ button.action.danger {
   border: 1px dashed var(--line);
   border-radius: 4px;
   text-align: center;
-  color: #6b6858;
+  color: var(--muted);
   font-family: var(--mono);
   font-size: 13px;
 }
@@ -901,7 +1076,7 @@ button.action.danger {
   padding: 16px;
   cursor: pointer;
   text-align: center;
-  background: white;
+  background: var(--surface);
 }
 
 .role-option.selected {
@@ -917,7 +1092,7 @@ button.action.danger {
 .role-option p {
   margin: 0;
   font-size: 13px;
-  color: #6b6858;
+  color: var(--muted);
 }
 
 .scan-row {
@@ -937,7 +1112,7 @@ button.action.danger {
   gap: 14px;
   margin-bottom: 18px;
   padding: 16px;
-  background: #faf9f4;
+  background: var(--surface-2);
   border: 1px dashed var(--line);
   border-radius: 6px;
 }
@@ -958,7 +1133,7 @@ button.action.danger {
 }
 
 .host-card:hover {
-  background: #eef2ef;
+  background: var(--hover);
   border-color: var(--line);
 }
 
@@ -985,7 +1160,7 @@ button.action.danger {
 .host-card .host-addr {
   font-family: var(--mono);
   font-size: 10px;
-  color: #8a8672;
+  color: var(--faint);
 }
 
 .field-row {
@@ -1002,7 +1177,7 @@ button.action.danger {
   display: block;
   font-family: var(--mono);
   font-size: 12px;
-  color: #6b6858;
+  color: var(--muted);
   margin-bottom: 6px;
 }
 
@@ -1014,7 +1189,7 @@ button.action.danger {
   border-radius: 3px;
   font-family: var(--mono);
   font-size: 13px;
-  background: white;
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -1025,8 +1200,8 @@ button.action.danger {
 }
 
 .field-row input:disabled {
-  background: #ece9dd;
-  color: #8a8672;
+  background: var(--sunken);
+  color: var(--faint);
 }
 
 .checkbox-row {
@@ -1055,7 +1230,7 @@ button.action.danger {
 .srv-message {
   font-family: var(--mono);
   font-size: 12.5px;
-  color: #6b6858;
+  color: var(--muted);
 }
 
 .about-row {
@@ -1072,7 +1247,7 @@ button.action.danger {
   margin-top: 12px;
   font-family: var(--mono);
   font-size: 12.5px;
-  color: var(--moss-dark);
+  color: var(--moss-ink-strong);
 }
 
 .secret-box {
@@ -1085,14 +1260,14 @@ button.action.danger {
   display: block;
   font-family: var(--mono);
   font-size: 12px;
-  color: #6b6858;
+  color: var(--muted);
   margin-bottom: 6px;
 }
 
 .secret-hint {
   margin: 0 0 12px;
   font-size: 13px;
-  color: #6b6858;
+  color: var(--muted);
 }
 
 .secret-row {
@@ -1107,21 +1282,8 @@ button.action.danger {
   border-radius: 3px;
   font-family: var(--mono);
   font-size: 13px;
-  background: #ece9dd;
+  background: var(--sunken);
   color: var(--ink);
-}
-
-/* Vocabulary: the same label column as the other settings rows. */
-.settings-section .field-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.settings-section .field-row label {
-  flex: 0 0 170px;
-  margin: 9px 0 0;
-  font-size: 12.5px;
 }
 
 /* Correcting a transcript: double-click a word or select a phrase. */
@@ -1134,7 +1296,7 @@ button.action.danger {
   z-index: 50;
   width: 320px;
   padding: 14px;
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 4px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
@@ -1143,7 +1305,7 @@ button.action.danger {
 .correct-from {
   font-family: var(--mono);
   font-size: 12px;
-  color: #6b6858;
+  color: var(--muted);
   margin-bottom: 8px;
   overflow-wrap: anywhere;
 }
@@ -1156,6 +1318,8 @@ button.action.danger {
   border-radius: 3px;
   font-family: var(--mono);
   font-size: 13px;
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .correct-pop .checkbox-row {
@@ -1171,5 +1335,5 @@ button.action.danger {
   margin-top: 8px;
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--moss);
+  color: var(--moss-ink);
 }

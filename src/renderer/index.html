@@ -179,61 +179,111 @@
       <div id="tab-settings" class="panel" hidden>
         <h2 class="panel-title" id="settingsTitle">Settings</h2>
 
-        <section class="settings-section">
-          <h3 id="settingsRecordingTitle">Recording</h3>
-          <div class="settings-row">
-            <label for="recMic" id="recMicLabel">Microphone</label>
-            <select id="recMic"></select>
+        <section class="settings-group">
+          <h3 class="settings-group-title" id="settingsRecordingTitle">Recording</h3>
+          <div class="settings-card">
+            <div class="setting">
+              <div class="setting-text">
+                <label for="recMic" id="recMicLabel">Microphone</label>
+                <p class="setting-hint" id="recMicHint">Used for your side of the call in Record.</p>
+                <p class="rec-mic-note" id="recMicNote" hidden>A Bluetooth microphone switches your headphones to headset mode while recording, so the call sounds worse in your ears. The built-in mic avoids that.</p>
+              </div>
+              <div class="setting-control">
+                <select id="recMic"></select>
+              </div>
+            </div>
           </div>
-          <p class="secret-hint" id="recMicHint">Used for your side of the call in Record.</p>
-          <p class="rec-mic-note" id="recMicNote" hidden>A Bluetooth microphone switches your headphones to headset mode while recording, so the call sounds worse in your ears. The built-in mic avoids that.</p>
         </section>
 
-        <section class="settings-section">
-          <h3 id="settingsLanguageTitle">Language</h3>
-          <div class="settings-row">
-            <label for="langSwitch" id="langSwitchLabel">Interface language</label>
-            <select id="langSwitch">
-              <option value="en">English</option>
-              <option value="uk">Українська</option>
-            </select>
+        <section class="settings-group">
+          <h3 class="settings-group-title" id="settingsLanguageTitle">Language</h3>
+          <div class="settings-card">
+            <div class="setting">
+              <div class="setting-text">
+                <label for="langSwitch" id="langSwitchLabel">Interface language</label>
+                <p class="setting-hint" id="langSwitchBusy" hidden>Can't change the language while a call is being recorded.</p>
+              </div>
+              <div class="setting-control">
+                <select id="langSwitch">
+                  <option value="en">English</option>
+                  <option value="uk">Українська</option>
+                </select>
+              </div>
+            </div>
           </div>
-          <p class="secret-hint" id="langSwitchBusy" hidden>Can't change the language while a call is being recorded.</p>
         </section>
 
-        <section class="settings-section">
-          <h3 id="settingsVocabTitle">Vocabulary</h3>
-          <div class="field-row">
-            <label for="vocabTerms" id="vocabTermsLabel">Terms</label>
-            <textarea id="vocabTerms" rows="3" spellcheck="false" placeholder="ESM, CommonJS, async/await, Sentry, EPAM"></textarea>
+        <section class="settings-group">
+          <h3 class="settings-group-title" id="settingsAppearanceTitle">Appearance</h3>
+          <div class="settings-card">
+            <div class="setting">
+              <div class="setting-text">
+                <label for="themeSwitch" id="themeSwitchLabel">Theme</label>
+              </div>
+              <div class="setting-control">
+                <select id="themeSwitch">
+                  <option value="system" id="themeOptSystem">Auto (match system)</option>
+                  <option value="light" id="themeOptLight">Light</option>
+                  <option value="dark" id="themeOptDark">Dark</option>
+                </select>
+              </div>
+            </div>
           </div>
-          <p class="secret-hint" id="vocabTermsHint">Names and jargon that come up in your recordings, separated by commas or new lines. Whisper is told to expect them.</p>
-          <div class="field-row">
-            <label for="vocabReplacements" id="vocabReplacementsLabel">Replacements</label>
-            <textarea id="vocabReplacements" rows="4" spellcheck="false" placeholder="Async/Evade → async/await&#10;Revit → RabbitMQ"></textarea>
-          </div>
-          <p class="secret-hint" id="vocabReplacementsHint">One per line: as heard → as it should be. Applied to every finished transcript, whole words only.</p>
-          <label class="checkbox-row" id="vocabUseHostRow" style="margin-top: 14px;">
-            <input type="checkbox" id="vocabUseHost">
-            <span id="vocabUseHostLabel">Also use the host's vocabulary</span>
-          </label>
-          <p class="secret-hint" id="vocabHostNote" hidden>On this host, the vocabulary also applies to recordings sent by clients.</p>
-          <p class="secret-hint" id="vocabSaved" hidden>Saved.</p>
         </section>
 
-        <section class="settings-section">
-          <h3 id="settingsUpdatesTitle">Updates</h3>
-          <div class="about-row" style="margin-top: 0; padding-top: 0; border-top: 0;">
-            <span class="secret-hint" id="appVersionText" style="margin: 0;"></span>
-            <button class="action secondary" id="checkUpdatesBtn">Check for updates</button>
+        <section class="settings-group">
+          <h3 class="settings-group-title">
+            <span id="settingsVocabTitle">Vocabulary</span>
+            <span class="settings-saved" id="vocabSaved" hidden>Saved.</span>
+          </h3>
+          <div class="settings-card">
+            <div class="setting stacked">
+              <div class="setting-text">
+                <label for="vocabTerms" id="vocabTermsLabel">Terms</label>
+                <p class="setting-hint" id="vocabTermsHint">Names and jargon that come up in your recordings, separated by commas or new lines. Whisper is told to expect them.</p>
+              </div>
+              <textarea id="vocabTerms" rows="3" spellcheck="false" placeholder="ESM, CommonJS, async/await, Sentry, EPAM"></textarea>
+            </div>
+            <div class="setting stacked">
+              <div class="setting-text">
+                <label for="vocabReplacements" id="vocabReplacementsLabel">Replacements</label>
+                <p class="setting-hint" id="vocabReplacementsHint">One per line: as heard → as it should be. Applied to every finished transcript, whole words only.</p>
+              </div>
+              <textarea id="vocabReplacements" rows="4" spellcheck="false" placeholder="Async/Evade → async/await&#10;Revit → RabbitMQ"></textarea>
+            </div>
+            <div class="setting" id="vocabUseHostRow">
+              <div class="setting-text">
+                <label for="vocabUseHost" id="vocabUseHostLabel">Also use the host's vocabulary</label>
+              </div>
+              <div class="setting-control">
+                <input type="checkbox" class="switch" id="vocabUseHost">
+              </div>
+            </div>
+            <p class="setting-footnote" id="vocabHostNote" hidden>On this host, the vocabulary also applies to recordings sent by clients.</p>
           </div>
-          <label class="checkbox-row" style="margin-top: 14px;">
-            <input type="checkbox" id="autoUpdateCheckbox">
-            <span id="autoUpdateLabel">Update automatically</span>
-          </label>
-          <p class="secret-hint" id="autoUpdateHint">
-            Downloads new versions in the background and asks you to restart once ready. Off: you get a notice and choose when to download.
-          </p>
+        </section>
+
+        <section class="settings-group">
+          <h3 class="settings-group-title" id="settingsUpdatesTitle">Updates</h3>
+          <div class="settings-card">
+            <div class="setting">
+              <div class="setting-text">
+                <span class="setting-value" id="appVersionText"></span>
+              </div>
+              <div class="setting-control">
+                <button class="action secondary" id="checkUpdatesBtn">Check for updates</button>
+              </div>
+            </div>
+            <div class="setting">
+              <div class="setting-text">
+                <label for="autoUpdateCheckbox" id="autoUpdateLabel">Update automatically</label>
+                <p class="setting-hint" id="autoUpdateHint">Downloads new versions in the background and asks you to restart once ready. Off: you get a notice and choose when to download.</p>
+              </div>
+              <div class="setting-control">
+                <input type="checkbox" class="switch" id="autoUpdateCheckbox">
+              </div>
+            </div>
+          </div>
         </section>
       </div>
     </main>

@@ -11,6 +11,7 @@ interface ServerState {
 
 const MODEL_PRESETS = ['tiny', 'base', 'small', 'medium', 'large-v3', 'large-v3-turbo'] as const;
 type ModelPreset = (typeof MODEL_PRESETS)[number];
+type Theme = 'system' | 'light' | 'dark';
 
 interface AppState {
   role: 'host' | 'client';
@@ -25,6 +26,7 @@ interface AppState {
   modelPath: string;
   lanExpose: boolean;
   autoUpdate: boolean;
+  theme: Theme;
   appVersion: string;
 }
 
@@ -62,6 +64,7 @@ interface WhisperApi {
   regenerate_secret(): Promise<{ secret: string }>;
   get_token(): Promise<IssuedToken>;
   set_language(lang: Lang): Promise<{ ok: boolean }>;
+  set_theme(theme: Theme): Promise<{ ok: boolean }>;
   choose_model_file(): Promise<{ path: string }>;
   save_client_history_entry(
     filename: string,
@@ -1484,6 +1487,7 @@ const copySecretBtn = document.getElementById('copySecretBtn') as HTMLButtonElem
 const regenSecretBtn = document.getElementById('regenSecretBtn') as HTMLButtonElement;
 const langSwitch = document.getElementById('langSwitch') as HTMLSelectElement;
 const langSwitchBusy = document.getElementById('langSwitchBusy') as HTMLParagraphElement;
+const themeSwitch = document.getElementById('themeSwitch') as HTMLSelectElement;
 const modelSelect = document.getElementById('modelSelect') as HTMLSelectElement;
 const modelPathInput = document.getElementById('modelPathInput') as HTMLInputElement;
 const browseModelBtn = document.getElementById('browseModelBtn') as HTMLButtonElement;
@@ -1777,6 +1781,11 @@ function applyStaticTranslations(lang: Lang): void {
   setTooltip('tabBtnHistory', 'nav.history', 'History');
   setTooltip('tabBtnServer', 'nav.server', 'Server');
   set('langSwitchLabel', 'lang.switch.label', 'Interface language');
+  set('settingsAppearanceTitle', 'settings.appearance', 'Appearance');
+  set('themeSwitchLabel', 'theme.label', 'Theme');
+  set('themeOptSystem', 'theme.system', 'Auto (match system)');
+  set('themeOptLight', 'theme.light', 'Light');
+  set('themeOptDark', 'theme.dark', 'Dark');
   set('historyTitle', 'history.title', 'History');
   set('serverTitle', 'server.title', 'Server');
   set('roleHostTitle', 'role.host.title', 'Server (host)');
@@ -1822,6 +1831,12 @@ langSwitch.addEventListener('change', async () => {
   // A full reload is the simplest way to re-render every dynamically built
   // string (job cards, banners, etc.) in the new language.
   location.reload();
+});
+
+// No reload needed: main sets nativeTheme, which flips prefers-color-scheme
+// in this page and the stylesheet follows.
+themeSwitch.addEventListener('change', () => {
+  void window.api.set_theme(themeSwitch.value as Theme);
 });
 
 // ── Init ─────────────────────────────────────────────────────────────────
@@ -1889,7 +1904,7 @@ async function loadVocabulary(role: string): Promise<void> {
   vocabTerms.value = vocabulary.terms.join(', ');
   vocabReplacements.value = vocabulary.replacements.map(([from, to]) => `${from} → ${to}`).join('\n');
   vocabUseHost.checked = useHost;
-  (document.getElementById('vocabUseHostRow') as HTMLLabelElement).hidden = role !== 'client';
+  (document.getElementById('vocabUseHostRow') as HTMLDivElement).hidden = role !== 'client';
   (document.getElementById('vocabHostNote') as HTMLParagraphElement).hidden = role !== 'host';
 }
 
@@ -1917,6 +1932,7 @@ async function init(): Promise<void> {
   uiRole = state.role;
   setLang(state.language || 'en');
   langSwitch.value = getLang();
+  themeSwitch.value = state.theme || 'system';
   applyStaticTranslations(getLang());
   document.title = 'Mova Flow';
   showTab('transcribe');
