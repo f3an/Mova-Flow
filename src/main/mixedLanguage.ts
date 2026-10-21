@@ -118,13 +118,21 @@ export function readWavMono16k(file: string): Int16Array | null {
     } else if (id === 'data') {
       if (!fmt || !fmt.channels || !fmt.rate) return null;
       const frames = Math.floor(Math.min(size, data.length - body) / (2 * fmt.channels));
-      const mono = new Float32Array(frames);
-      for (let i = 0; i < frames; i++) {
+      const mixAt = (i: number) => {
         let sum = 0;
-        for (let c = 0; c < fmt.channels; c++) sum += data.readInt16LE(body + (i * fmt.channels + c) * 2);
-        mono[i] = sum / fmt.channels;
+        for (let c = 0; c < fmt!.channels; c++) sum += data.readInt16LE(body + (i * fmt!.channels + c) * 2);
+        return sum / fmt!.channels;
+      };
+      // Filled in a plain loop: Int16Array.from(mono, fn) boxes every sample
+      // on the JS heap (~47 bytes each) — one side of a 2-hour call took
+      // ~5 GB and V8 killed the whole app.
+      if (fmt.rate === SAMPLE_RATE) {
+        const out = new Int16Array(frames);
+        for (let i = 0; i < frames; i++) out[i] = Math.round(mixAt(i));
+        return out;
       }
-      if (fmt.rate === SAMPLE_RATE) return Int16Array.from(mono, (v) => Math.round(v));
+      const mono = new Float32Array(frames);
+      for (let i = 0; i < frames; i++) mono[i] = mixAt(i);
       const out = new Int16Array(Math.floor((frames * SAMPLE_RATE) / fmt.rate));
       const step = fmt.rate / SAMPLE_RATE;
       for (let i = 0; i < out.length; i++) {
